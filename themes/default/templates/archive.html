@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}归档 · {{ view.site.title }}{% endblock %}
+{% block content %}
+<section class="hero small">
+  <p class="eyebrow">ARCHIVE</p>
+  <h1>归档</h1>
+  <p class="hero-lead">{{ view.total_posts }} 篇已发布文章，按时间倒序。</p>
+</section>
+<section class="section archive">
+  {% for year in view.years %}
+  <div class="archive-year">
+    <h2>{{ year.year }}</h2>
+    {% for month in year.months %}
+    <div class="archive-month">
+      <h3>{{ year.year }}-{{ month.month }}</h3>
+      <ul>
+        {% for post in month.posts %}
+        <li>
+          <img class="archive-cover" src="{{ post.cover_image }}" alt="" loading="lazy" onerror="this.onerror=null;this.src='/static/default-cover.svg'">
+          <time>{{ post.date }}</time>
+          <a href="/posts/{{ post.slug }}">{{ post.title }}</a>
+          <span class="muted">{{ post.reading_minutes }} 分钟</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">暂无归档。</p>
+  {% endfor %}
+</section>
+{% endblock %}

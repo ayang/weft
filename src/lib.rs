@@ -1,0 +1,17 @@
+pub mod ai;
+pub mod app;
+pub mod charts;
+pub mod controllers;
+pub mod data;
+pub mod dtos;
+pub mod initializers;
+pub mod mailers;
+pub mod materials;
+pub mod media;
+pub mod models;
+pub mod security;
+pub mod tasks;
+pub mod util;
+pub mod views;
+pub mod web;
+pub mod workers;

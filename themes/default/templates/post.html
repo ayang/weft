@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ view.post.title }} · {{ view.site.title }}{% endblock %}
+{% block description %}{{ view.post.summary }}{% endblock %}
+{% block content %}
+<article class="article">
+  <nav class="breadcrumb"><a href="/">首页</a> <span>/</span> <span>{{ view.post.title }}</span></nav>
+  <header class="article-head">
+    <p class="eyebrow">ARTICLE</p>
+    <h1>{{ view.post.title }}</h1>
+    <div class="post-meta">
+      <span>{{ view.post.date }}</span>
+      <span>{{ view.post.reading_minutes }} 分钟阅读</span>
+      <span>更新于 {{ view.post.updated }}</span>
+    </div>
+    <div class="tag-row">
+      {% if view.post.category %}<a class="tag category-tag" href="/categories/{{ view.post.category.slug }}">{{ view.post.category.name }}</a>{% endif %}
+      {% for tag in view.post.tags %}<a class="tag" href="/tags/{{ tag.slug }}">#{{ tag.name }}</a>{% endfor %}
+    </div>
+  </header>
+
+  {% if view.post.cover_image %}
+  <figure class="post-cover"><img src="{{ view.post.cover_image }}" alt="{{ view.post.title }}" loading="eager" onerror="this.onerror=null;this.src='/static/default-cover.svg'"></figure>
+  {% endif %}
+
+  <div class="prose">
+    {{ view.body_html | safe }}
+  </div>
+
+  {% if view.charts %}
+  <section class="article-charts">
+    <div class="section-head">
+      <h2>数据图表</h2>
+      <span class="muted">spec + 最新数据，动态刷新</span>
+    </div>
+    {% for chart in view.charts %}
+    {% include "partials/chart.html" %}
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <footer class="article-footer">
+    <div>
+      <strong>读到这里</strong>
+      <p class="muted">如果这篇对你有帮助，可以继续读下面的相关文章，或从归档里慢慢翻。</p>
+    </div>
+    <div class="article-actions">
+      <a class="button ghost" href="/archive">浏览归档</a>
+    </div>
+  </footer>
+</article>
+
+{% if view.related %}
+<section class="section related-section">
+  <div class="section-head"><h2>相关阅读</h2><span class="muted">继续读几篇</span></div>
+  <div class="related-grid">
+    {% for post in view.related %}
+    <a class="related-card" href="/posts/{{ post.slug }}">
+      <span class="related-meta">
+        <time>{{ post.date }}</time>
+        {% if post.category %}<span>{{ post.category.name }}</span>{% endif %}
+      </span>
+      <h3>{{ post.title }}</h3>
+      <p>{{ post.summary }}</p>
+      <span class="related-more">阅读 →</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

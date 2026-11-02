@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block body_class %}admin-body{% endblock %}
+{% block page_class %}page-admin{% endblock %}
+{% block title %}媒体库 · {{ site.title }}{% endblock %}
+{% block content %}
+{% include "partials/admin_nav.html" %}
+<section class="admin-head">
+  <div>
+    <p class="eyebrow">ADMIN / MEDIA</p>
+    <h1>媒体库</h1>
+    <p class="muted">上传图片和短小视频。图片插入 Markdown，视频使用 <code>[[video:文件名]]</code> 标记。</p>
+  </div>
+  <div class="admin-actions">
+    <a class="button ghost" href="/admin">返回后台</a>
+  </div>
+</section>
+
+<div class="settings-layout media-layout">
+  <form id="media-upload-form" class="builder-card settings-form">
+    <div class="builder-card-head">
+      <div><p class="eyebrow">UPLOAD</p><h2>上传媒体</h2></div>
+    </div>
+    <label for="media-file">选择文件</label>
+    <input id="media-file" name="file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/webm" required>
+    <p class="muted small">图片最大 8 MB，视频最大 12 MB；只接受 JPG/PNG/WebP/GIF/AVIF 和 MP4/WebM。</p>
+    <div class="settings-actions">
+      <button class="button" type="submit">上传</button>
+      <span class="muted small" id="media-upload-status"></span>
+    </div>
+  </form>
+
+  <aside class="builder-card settings-info">
+    <h2>怎么使用</h2>
+    <ul class="small muted">
+      <li>图片：复制 Markdown，粘贴到正文。</li>
+      <li>视频：复制 <code>[[video:文件名]]</code>，单独一行放到正文。</li>
+      <li>封面图：在文章编辑页上传图片并设为封面，或复制媒体 URL。</li>
+      <li>视频由本机直接提供，不做转码；建议使用 H.264 MP4 或 WebM。</li>
+    </ul>
+  </aside>
+</div>
+
+{% if items %}
+<section class="section">
+  <div class="section-head"><h2>最近上传</h2><span class="muted">{{ items | length }} 个文件</span></div>
+  <div class="media-grid">
+    {% for item in items %}
+    <article class="media-card">
+      <div class="media-preview">
+        {% if item.kind == "image" %}
+        <img src="{{ item.url }}" alt="{{ item.original_name }}" loading="lazy" onerror="this.onerror=null;this.src='/static/default-cover.svg'">
+        {% else %}
+        <video src="{{ item.url }}" controls preload="metadata" playsinline></video>
+        {% endif %}
+      </div>
+      <div class="media-meta">
+        <strong>{{ item.original_name }}</strong>
+        <span class="muted small">{{ item.kind }} · {{ item.created }}</span>
+        <div class="media-actions">
+          <button type="button" class="link-button" data-copy-value="{{ item.markdown }}">复制 Markdown</button>
+          <button type="button" class="link-button" data-copy-value="{{ item.url }}">复制 URL</button>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<div class="empty-state"><p>还没有上传媒体。</p></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/admin.js" defer></script>{% endblock %}

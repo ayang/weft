@@ -1,0 +1,10 @@
+<figure class="chart-card" id="chart-{{ chart.id }}">
+  <figcaption>
+    <span class="chart-title">{{ chart.title }}</span>
+    <span class="muted">{{ chart.kind }}{% if chart.last_success_at %} · 数据成功于 {{ chart.last_success_at }}{% endif %}</span>
+  </figcaption>
+  <div class="chart" style="height: {{ chart.height }}px" data-chart-id="{{ chart.id }}" data-chart-title="{{ chart.title }}">
+    <div class="chart-loading">正在获取图表数据…</div>
+  </div>
+  {% if chart.error_message %}<p class="chart-error">最近一次刷新失败：{{ chart.error_message }}</p>{% endif %}
+</figure>

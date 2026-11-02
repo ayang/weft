@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block body_class %}admin-body{% endblock %}
+{% block page_class %}page-admin{% endblock %}
+{% block title %}分类 · {{ site.title }}{% endblock %}
+{% block content %}
+{% include "partials/admin_nav.html" %}
+<section class="admin-head">
+  <div>
+    <p class="eyebrow">ADMIN / TAXONOMY</p>
+    <h1>分类</h1>
+    <p class="muted">分类由 AI 根据现有文章自动生成和归类；不需要手动维护分类。</p>
+  </div>
+  <div class="admin-actions">
+    <a class="button ghost" href="/admin">返回后台</a>
+  </div>
+</section>
+
+<div class="settings-layout">
+  <section class="builder-card">
+    <div class="builder-card-head">
+      <div><p class="eyebrow">CLASSIFICATION</p><h2>全站文章重新分类</h2></div>
+      <span class="muted small">{{ post_count }} 篇文章</span>
+    </div>
+    <p class="muted small">会读取现有文章，生成新的分类体系并覆盖旧分类。操作只影响分类，不会修改文章内容。</p>
+    <div class="settings-actions">
+      <button class="button" type="button" id="regenerate-categories">AI 重新分类全站文章</button>
+      <span class="muted small" id="category-status"></span>
+    </div>
+    <h3>当前分类</h3>
+    <div class="tag-cloud">
+      {% for category in categories %}
+      <a class="tag big" href="/categories/{{ category.slug }}">{{ category.name }} <span>{{ category.count }}</span></a>
+      {% else %}
+      <p class="muted small">还没有分类。点击上面的按钮生成。</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside class="builder-card settings-info">
+    <h2>说明</h2>
+    <ul class="small muted">
+      <li>使用当前 AI 设置中的模型；离线模式会使用关键词规则。</li>
+      <li>一次操作会覆盖旧分类，请确认当前分类可以重新生成。</li>
+      <li>分类会显示在文章列表、文章页和首页分类入口。</li>
+    </ul>
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/admin.js" defer></script>{% endblock %}

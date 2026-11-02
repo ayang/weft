@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block body_class %}admin-body{% endblock %}
+{% block page_class %}page-admin{% endblock %}
+{% block title %}AI 设置 · {{ site.title }}{% endblock %}
+{% block content %}
+{% include "partials/admin_nav.html" %}
+<section class="admin-head">
+  <div>
+    <p class="eyebrow">ADMIN / MODEL PROVIDERS</p>
+    <h1>AI 设置</h1>
+    <p class="muted">选择提供商预设，或填写任意 OpenAI-compatible 服务。Key 只保存在服务端数据库，不会回显到浏览器。</p>
+  </div>
+  <div class="admin-actions">
+    <a class="button ghost" href="/admin">返回后台</a>
+  </div>
+</section>
+
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if saved %}<div class="alert success">AI 设置已保存。</div>{% endif %}
+
+<div class="settings-layout">
+  <form method="post" action="/admin/settings/ai" class="builder-card settings-form">
+    <div class="builder-card-head">
+      <div><p class="eyebrow">ACTIVE CONFIG</p><h2>模型与密钥</h2></div>
+      <span class="status {% if effective_offline %}status-paused{% else %}status-active{% endif %}">
+        {% if effective_offline %}当前离线{% else %}已启用{% endif %}
+      </span>
+    </div>
+
+    <label for="ai-preset">提供商预设</label>
+    <select id="ai-preset">
+      <option value="">— 选择预设自动填充 —</option>
+      {% for preset in presets %}
+      <option value="{{ preset.id }}" data-provider="{{ preset.id }}" data-base-url="{{ preset.base_url }}" data-model="{{ preset.model }}" data-needs-key="{{ preset.needs_key }}">{{ preset.name }}</option>
+      {% endfor %}
+    </select>
+    <p class="muted small" id="preset-hint">预设只填充 Base URL 和默认模型；你仍可以改成任意兼容服务。</p>
+
+    <label for="ai-provider">提供商标识</label>
+    <input id="ai-provider" name="provider" value="{{ provider }}" placeholder="deepseek" required>
+    <p class="muted small">用于审计与显示；离线模式填 <code>offline</code>，本地 Ollama 填 <code>ollama</code>。</p>
+
+    <label for="ai-base-url">Base URL</label>
+    <input id="ai-base-url" name="base_url" value="{{ base_url }}" placeholder="https://api.deepseek.com/v1">
+    <p class="muted small">服务端会请求 <code>{Base URL}/chat/completions</code>；必须是 http/https。</p>
+
+    <label for="ai-model">模型</label>
+    <input id="ai-model" name="model" value="{{ model }}" placeholder="deepseek-chat">
+    <p class="muted small">例如 <code>deepseek-chat</code>、<code>deepseek-reasoner</code>、<code>gpt-4o-mini</code>、<code>qwen-plus</code>。</p>
+
+    <label for="ai-api-key">API Key</label>
+    <input id="ai-api-key" name="api_key" type="password" autocomplete="new-password" placeholder="{% if has_key %}已保存，留空保持不变{% else %}未配置；离线/本地模型可留空{% endif %}">
+    <div class="settings-inline">
+      <span class="muted small">当前 Key 来源：
+        {% if key_source == "database" %}数据库
+        {% elif key_source == "environment" %}环境变量
+        {% else %}未配置{% endif %}
+      </span>
+      {% if has_key %}<label class="checkbox"><input type="checkbox" name="clear_key" value="on"> 清除已保存的 Key</label>{% endif %}
+    </div>
+
+    <label class="checkbox"><input type="checkbox" name="enabled" value="on" {% if enabled %}checked{% endif %}> 启用这份运行时配置</label>
+    <p class="muted small">关闭后 AI 功能会强制离线，不会回退到环境变量 Key，便于紧急停用外部模型。</p>
+
+    <div class="settings-actions">
+      <button class="button" type="submit">保存 AI 设置</button>
+      <a class="text-link" href="/admin/charts/new">去试试图表生成 →</a>
+    </div>
+  </form>
+
+  <aside class="builder-card settings-info">
+    <h2>当前生效</h2>
+    <dl class="settings-dl">
+      <div><dt>提供商</dt><dd><code>{{ effective_provider }}</code></dd></div>
+      <div><dt>模型</dt><dd><code>{{ effective_model }}</code></dd></div>
+      <div><dt>状态</dt><dd>{% if effective_offline %}离线抽取模式{% else %}会调用外部/本地模型{% endif %}</dd></div>
+      <div><dt>Key</dt><dd>{% if has_key %}已配置（不回显）{% else %}未配置{% endif %}</dd></div>
+    </dl>
+
+    <h3>支持的预设</h3>
+    <ul class="preset-list">
+      {% for preset in presets %}
+      <li><strong>{{ preset.name }}</strong><span>{{ preset.base_url }}</span><code>{{ preset.model }}</code></li>
+      {% endfor %}
+    </ul>
+
+    <div class="security-note">
+      <h3>安全说明</h3>
+      <ul class="small muted">
+        <li>Key 存在本地 SQLite，数据库文件应限制权限（如 <code>chmod 600</code>）并纳入备份策略。</li>
+        <li>Key 不会返回给浏览器；页面只显示“已配置/未配置”。</li>
+        <li>更高安全要求可继续使用环境变量 <code>OPENAI_API_KEY</code>，不把 Key 写入数据库。</li>
+        <li>所有模型输出仍经过 JSON/文本校验，不执行模型生成的代码。</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/admin.js" defer></script>{% endblock %}

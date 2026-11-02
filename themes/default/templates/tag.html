@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}#{{ view.tag.name }} · {{ view.site.title }}{% endblock %}
+{% block content %}
+<section class="hero small">
+  <p class="eyebrow">TAG</p>
+  <h1>#{{ view.tag.name }}</h1>
+  <p class="hero-lead">共 {{ view.posts | length }} 篇已发布文章。</p>
+</section>
+<section class="section">
+  <div class="post-list">
+    {% for post in view.posts %}
+    <article class="post-card">
+      <a class="post-card-cover" href="/posts/{{ post.slug }}" aria-hidden="true">
+        <img src="{{ post.cover_image }}" alt="" loading="lazy" onerror="this.onerror=null;this.src='/static/default-cover.svg'">
+      </a>
+      <div class="post-card-main">
+        <div class="post-meta"><time>{{ post.date }}</time><span>{{ post.reading_minutes }} 分钟</span></div>
+        <h3><a href="/posts/{{ post.slug }}">{{ post.title }}</a></h3>
+        {% if post.category %}<a class="post-category" href="/categories/{{ post.category.slug }}">{{ post.category.name }}</a>{% endif %}
+        <p>{{ post.summary }}</p>
+      </div>
+      <span class="arrow" aria-hidden="true">↗</span>
+    </article>
+    {% else %}
+    <p class="muted">这个标签下还没有文章。</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

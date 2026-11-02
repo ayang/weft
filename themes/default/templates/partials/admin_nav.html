@@ -1,0 +1,20 @@
+<aside class="admin-sidebar" aria-label="管理菜单">
+  <a class="admin-sidebar-brand" href="/admin">
+    <span class="brand-mark">{{ site.brand }}</span>
+    <span class="muted small">管理后台</span>
+  </a>
+  <nav class="admin-nav">
+    <a href="/admin" data-admin-nav="dashboard">概览</a>
+    <a href="/admin/posts" data-admin-nav="posts">文章</a>
+    <a href="/admin/posts/new" data-admin-nav="new-post">新建文章</a>
+    <a href="/admin/categories" data-admin-nav="categories">分类</a>
+    <a href="/admin/charts" data-admin-nav="charts">图表</a>
+    <a href="/admin/media" data-admin-nav="media">媒体库</a>
+    <a href="/admin/settings/site" data-admin-nav="site-settings">站点设置</a>
+    <a href="/admin/settings/ai" data-admin-nav="ai-settings">AI 设置</a>
+  </nav>
+  <div class="admin-sidebar-footer">
+    <a href="/" target="_blank" rel="noopener">查看站点 ↗</a>
+    <form method="post" action="/admin/logout"><button class="link-button" type="submit">退出登录</button></form>
+  </div>
+</aside>

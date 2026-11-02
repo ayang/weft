@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block body_class %}admin-body{% endblock %}
+{% block page_class %}page-admin{% endblock %}
+{% block title %}文章管理 · {{ site.title }}{% endblock %}
+{% block content %}
+{% include "partials/admin_nav.html" %}
+<section class="admin-head">
+  <div>
+    <p class="eyebrow">ADMIN / POSTS</p>
+    <h1>文章</h1>
+    <p class="muted">管理全部文章：编辑、查看、发布状态和删除。共 {{ total }} 篇，已发布 {{ published_count }} 篇，草稿 {{ draft_count }} 篇。</p>
+  </div>
+  <div class="admin-actions">
+    <a class="button" href="/admin/posts/new">新建文章</a>
+  </div>
+</section>
+
+<section class="section">
+  <div class="table-wrap">
+    <table class="admin-table">
+      <thead><tr><th>标题</th><th>状态</th><th>分类</th><th>更新</th><th></th></tr></thead>
+      <tbody>
+        {% for post in posts %}
+        <tr>
+          <td><a href="/admin/posts/{{ post.id }}/edit">{{ post.title }}</a><div class="muted small">/{{ post.slug }}</div></td>
+          <td><span class="status status-{{ post.status }}">{{ post.status }}</span>{% if post.pinned %} <span class="pill">置顶</span>{% endif %}</td>
+          <td>{% if post.category %}{{ post.category }}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="muted">{{ post.updated }}</td>
+          <td class="row-actions">
+            <a href="/admin/posts/{{ post.id }}/edit">编辑</a>
+            <a href="/posts/{{ post.slug }}" target="_blank" rel="noopener">查看</a>
+            <form method="post" action="/admin/posts/{{ post.id }}/delete" onsubmit="return confirm('确定删除这篇文章？')"><button class="link-button danger" type="submit">删除</button></form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">还没有文章。点击右上角“新建文章”开始。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/admin.js" defer></script>{% endblock %}

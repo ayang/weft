@@ -1,0 +1,25 @@
+# Loco Scheduler configuration.
+#
+# Run alongside the server with:
+#   SCHEDULER_CONFIG=config/scheduler.yaml cargo loco start --all
+# or as its own process:
+#   cargo loco scheduler --config config/scheduler.yaml
+#
+# The scheduler shells out to this same binary with `task <name>`; it does not
+# keep work in-process. Cron format is 7 fields: sec min hour dom month dow year.
+output: stdout
+jobs:
+  refresh_due_charts:
+    run: "charts:refresh_due"
+    schedule: "0 * * * * * *"
+    run_on_start: true
+    tags: ["maintenance", "charts"]
+  enrich_due_posts:
+    run: "posts:enrich_due"
+    schedule: "0 */5 * * * * *"
+    run_on_start: true
+    tags: ["maintenance", "ai"]
+  cleanup_cache:
+    run: "cache:cleanup"
+    schedule: "0 30 4 * * * *"
+    tags: ["maintenance"]

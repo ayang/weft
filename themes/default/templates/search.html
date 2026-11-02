@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}搜索 · {{ view.site.title }}{% endblock %}
+{% block content %}
+<section class="hero small">
+  <p class="eyebrow">SEARCH</p>
+  <h1>搜索</h1>
+  <form class="search-form" action="/search" method="get" role="search">
+    <input type="search" name="q" value="{{ view.query }}" placeholder="标题、摘要或正文关键词" autofocus>
+    <button class="button" type="submit">搜索</button>
+  </form>
+</section>
+<section class="section">
+  {% if view.searched %}
+  <div class="section-head"><h2>“{{ view.query }}”</h2><span class="muted">{{ view.posts | length }} 个结果</span></div>
+  {% endif %}
+  <div class="post-list">
+    {% for post in view.posts %}
+    <article class="post-card">
+      <a class="post-card-cover" href="/posts/{{ post.slug }}" aria-hidden="true">
+        <img src="{{ post.cover_image }}" alt="" loading="lazy" onerror="this.onerror=null;this.src='/static/default-cover.svg'">
+      </a>
+      <div class="post-card-main">
+        <div class="post-meta"><time>{{ post.date }}</time><span>{{ post.reading_minutes }} 分钟</span></div>
+        <h3><a href="/posts/{{ post.slug }}">{{ post.title }}</a></h3>
+        {% if post.category %}<a class="post-category" href="/categories/{{ post.category.slug }}">{{ post.category.name }}</a>{% endif %}
+        <p>{{ post.summary }}</p>
+        <div class="tag-row">
+          {% for tag in post.tags %}<a class="tag" href="/tags/{{ tag.slug }}">#{{ tag.name }}</a>{% endfor %}
+        </div>
+      </div>
+      <span class="arrow" aria-hidden="true">↗</span>
+    </article>
+    {% else %}
+      {% if view.searched %}<p class="muted">没有找到匹配的文章。试试更短的关键词。</p>{% endif %}
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

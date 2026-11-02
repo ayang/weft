@@ -1,0 +1,48 @@
+{% if view is defined %}{% set site = view.site %}{% endif %}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ site.title }}{% endblock %}</title>
+  <meta name="description" content="{% block description %}{{ site.description }}{% endblock %}">
+  <meta name="author" content="{{ site.author }}">
+  <link rel="stylesheet" href="/static/site.css">
+  <link rel="alternate" type="text/markdown" title="Markdown" href="/llms.txt">
+  <link rel="alternate" type="application/rss+xml" title="文章列表" href="/api/agent/posts">
+  <script src="/static/echarts.min.js" defer></script>
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <div class="reading-progress" id="reading-progress" aria-hidden="true"></div>
+  <header class="site-header">
+    <a class="brand" href="/">
+      <span class="brand-mark">{{ site.brand }}</span>
+      <span class="brand-sub">{{ site.tagline }}</span>
+    </a>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="/">首页</a>
+      <a href="/archive">归档</a>
+      <a href="/search">搜索</a>
+      <a class="nav-admin" href="/admin">管理</a>
+    </nav>
+  </header>
+
+  <main class="page {% block page_class %}{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div>
+      <strong>{{ site.brand }}</strong> · {{ site.author }}
+    </div>
+    <div class="footer-links">
+      <a href="/">首页</a>
+      <a href="/archive">归档</a>
+      <a href="/search">搜索</a>
+    </div>
+    <p class="disclosure">{{ site.tagline }} · 内容持续更新</p>
+  </footer>
+  <script src="/static/app.js" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1200" viewBox="0 0 2400 1200">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7efe4"/>
+      <stop offset=".48" stop-color="#ead8c4"/>
+      <stop offset="1" stop-color="#cba887"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#7d2c1d" stop-opacity=".05"/>
+      <stop offset=".42" stop-color="#a8442b" stop-opacity=".58"/>
+      <stop offset="1" stop-color="#d07a57" stop-opacity=".12"/>
+    </linearGradient>
+    <linearGradient id="inkRibbon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b332b" stop-opacity=".05"/>
+      <stop offset=".5" stop-color="#3b332b" stop-opacity=".30"/>
+      <stop offset="1" stop-color="#3b332b" stop-opacity=".06"/>
+    </linearGradient>
+    <radialGradient id="warm" cx=".78" cy=".28" r=".55">
+      <stop offset="0" stop-color="#b95f43" stop-opacity=".34"/>
+      <stop offset=".55" stop-color="#d3a27e" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#f7efe4" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="threads" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(18)">
+      <path d="M0 0v18M9 0v18" stroke="#6f513c" stroke-opacity=".055" stroke-width="1"/>
+    </pattern>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="46"/>
+    </filter>
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency=".72" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".16"/></feComponentTransfer>
+    </filter>
+    <clipPath id="frame"><rect width="2400" height="1200" rx="0"/></clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="2400" height="1200" fill="url(#ground)"/>
+    <rect width="2400" height="1200" fill="url(#warm)"/>
+    <rect width="2400" height="1200" fill="url(#threads)"/>
+
+    <g filter="url(#soft)">
+      <ellipse cx="1920" cy="310" rx="560" ry="430" fill="#a8442b" opacity=".22"/>
+      <ellipse cx="2180" cy="930" rx="520" ry="430" fill="#6b4632" opacity=".26"/>
+      <ellipse cx="1570" cy="980" rx="620" ry="320" fill="#f2dfc9" opacity=".55"/>
+    </g>
+
+    <path d="M980 1200C1240 800 1620 420 2440 210L2440 450C1730 590 1370 900 1170 1200Z" fill="url(#ribbon)"/>
+    <path d="M1220 1200C1460 890 1850 580 2440 420L2440 560C1880 700 1570 970 1430 1200Z" fill="url(#inkRibbon)"/>
+
+    <g fill="none">
+      <path d="M1010 1200C1320 760 1740 470 2440 360" stroke="#f7eadb" stroke-opacity=".55" stroke-width="1.5"/>
+      <path d="M1090 1200C1410 820 1810 540 2440 470" stroke="#7d2c1d" stroke-opacity=".20" stroke-width="1"/>
+      <path d="M1540 120C1810 260 2040 470 2190 760S2350 1090 2440 1200" stroke="#3b332b" stroke-opacity=".16" stroke-width="1.5"/>
+      <path d="M1680 60C1940 230 2170 480 2290 820" stroke="#f7eadb" stroke-opacity=".42" stroke-width="1"/>
+    </g>
+
+    <circle cx="1880" cy="400" r="250" fill="none" stroke="#7d2c1d" stroke-opacity=".16" stroke-width="1.5"/>
+    <circle cx="1880" cy="400" r="168" fill="none" stroke="#f7eadb" stroke-opacity=".38" stroke-width="1"/>
+    <circle cx="1965" cy="318" r="7" fill="#7d2c1d" fill-opacity=".55"/>
+
+    <g fill="none" stroke="#3b332b" stroke-opacity=".18" stroke-width="1.5">
+      <path d="M150 230h210M150 266h138M150 302h82"/>
+      <path d="M2150 1030h170M2240 1066h80"/>
+    </g>
+
+    <rect width="2400" height="1200" filter="url(#grain)" opacity=".5" style="mix-blend-mode:multiply"/>
+    <rect x="24" y="24" width="2352" height="1152" rx="22" fill="none" stroke="#6b4632" stroke-opacity=".20"/>
+  </g>
+</svg>

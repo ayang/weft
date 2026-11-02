@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+BIN="${WEFT_BIN:-target/debug/weft-cli}"
+if [[ "$BIN" == *"/release/"* ]]; then
+  BUILD_ARGS=(build --release --bin weft-cli)
+else
+  BUILD_ARGS=(build --bin weft-cli)
+fi
+
+needs_build() {
+  [[ ! -x "$BIN" ]] && return 0
+  find src migration Cargo.toml Cargo.lock -newer "$BIN" -print -quit 2>/dev/null | grep -q .
+}
+
+if needs_build; then
+  echo "building $BIN..." >&2
+  cargo "${BUILD_ARGS[@]}"
+fi
+
+exec "$BIN" "$@"

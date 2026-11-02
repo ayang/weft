@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block body_class %}admin-body{% endblock %}
+{% block page_class %}page-admin{% endblock %}
+{% block title %}站点设置 · {{ site.title }}{% endblock %}
+{% block content %}
+{% include "partials/admin_nav.html" %}
+<section class="admin-head">
+  <div>
+    <p class="eyebrow">ADMIN / SITE IDENTITY</p>
+    <h1>站点设置</h1>
+    <p class="muted">站点名称、品牌、副标题、作者和每页文章数。保存后立即生效，无需重启。</p>
+  </div>
+  <div class="admin-actions">
+    <a class="button ghost" href="/admin">返回后台</a>
+    <a class="button ghost" href="/admin/settings/ai">AI 设置</a>
+  </div>
+</section>
+
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if saved %}<div class="alert success">站点设置已保存。</div>{% endif %}
+
+<div class="settings-layout">
+  <form method="post" action="/admin/settings/site" class="builder-card settings-form">
+    <div class="builder-card-head">
+      <div><p class="eyebrow">IDENTITY</p><h2>站点身份</h2></div>
+    </div>
+
+    <label for="site-title">站点名称</label>
+    <input id="site-title" name="title" value="{{ values.title }}" required>
+    <p class="muted small">用于浏览器标题、首页主标题和后台标题。</p>
+
+    <div class="field-row">
+      <div>
+        <label for="site-brand">品牌名</label>
+        <input id="site-brand" name="brand" value="{{ values.brand }}" placeholder="留空则使用站点名称">
+        <p class="muted small">页头左侧显示的名字。</p>
+      </div>
+      <div>
+        <label for="site-tagline">品牌副标题</label>
+        <input id="site-tagline" name="tagline" value="{{ values.tagline }}" placeholder="例如：写代码，也写生活">
+        <p class="muted small">显示在品牌名旁边。</p>
+      </div>
+    </div>
+
+    <label for="site-description">站点描述</label>
+    <textarea id="site-description" name="description" rows="3">{{ values.description }}</textarea>
+    <p class="muted small">用于首页介绍和 SEO description。</p>
+
+    <div class="field-row">
+      <div>
+        <label for="site-author">作者</label>
+        <input id="site-author" name="author" value="{{ values.author }}" required>
+      </div>
+      <div>
+        <label for="site-posts">每页文章数</label>
+        <input id="site-posts" name="posts_per_page" type="number" min="1" max="100" value="{{ values.posts_per_page }}">
+      </div>
+    </div>
+
+    <label for="site-hero">首页 Banner 图片</label>
+    <input id="site-hero" name="hero_image" value="{{ values.hero_image }}" placeholder="/static/hero-banner.svg 或 https://...">
+    <p class="muted small">留空使用默认编织纹理 Banner；也可以上传本机图片或填入媒体库 URL。</p>
+    <div class="hero-upload-row">
+      <input id="hero-image-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif">
+      <button class="button ghost small" type="button" id="hero-image-upload">上传并填入</button>
+      <button class="button ghost small" type="button" id="open-media-picker">从媒体库选择</button>
+      <span class="muted small" id="hero-upload-status"></span>
+    </div>
+    <img class="hero-image-preview" id="hero-image-preview" src="{{ values.hero_image or '/static/hero-banner.svg' }}" alt="首页 Banner 预览" onerror="this.onerror=null;this.src='/static/hero-banner.svg'">
+
+    <label for="site-base-url">站点 URL</label>
+    <input id="site-base-url" name="base_url" value="{{ values.base_url }}" placeholder="https://example.com" required>
+    <p class="muted small">用于 sitemap、llms.txt 和 Agent API 的绝对链接。</p>
+
+    <div class="settings-actions">
+      <button class="button" type="submit">保存站点设置</button>
+      <a class="text-link" href="/" target="_blank" rel="noopener">查看站点 →</a>
+    </div>
+  </form>
+
+  <aside class="builder-card settings-info">
+    <h2>当前展示</h2>
+    <div class="site-preview">
+      <div class="site-preview-brand">{{ values.brand or values.title }}</div>
+      <div class="muted small">{{ values.tagline }}</div>
+      <p>{{ values.description }}</p>
+      <div class="muted small">{{ values.author }} · {{ values.base_url }}</div>
+    </div>
+    <h3>说明</h3>
+    <ul class="small muted">
+      <li>这里保存的是数据库运行时配置，会覆盖 `config/<env>.yaml` 中的站点默认值。</li>
+      <li>AI 提供商、模型和 Key 在 <a href="/admin/settings/ai">AI 设置</a> 中配置。</li>
+      <li>站点 URL、作者和页数会影响公开页面和 Agent API 输出。</li>
+    </ul>
+  </aside>
+</div>
+{% include "partials/media_picker.html" %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/admin.js" defer></script>{% endblock %}

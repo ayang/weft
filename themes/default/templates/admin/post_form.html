@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block body_class %}admin-body{% endblock %}
+{% block page_class %}page-admin{% endblock %}
+{% block title %}{% if is_new %}新建文章{% else %}编辑文章{% endif %} · {{ site.title }}{% endblock %}
+{% block content %}
+{% include "partials/admin_nav.html" %}
+<section class="admin-head">
+  <div>
+    <p class="eyebrow">ADMIN / WRITING</p>
+    <h1>{% if is_new %}新建文章{% else %}编辑文章{% endif %}</h1>
+    <p class="muted">Markdown 写作；发布后自动触发摘要、卡片与索引任务。</p>
+  </div>
+  <div class="admin-actions">
+    <a class="button ghost" href="/admin">返回</a>
+    {% if post.slug %}<a class="button ghost" href="/posts/{{ post.slug }}" target="_blank" rel="noopener">查看页面</a>{% endif %}
+  </div>
+</section>
+
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<form method="post" action="{% if post.id %}/admin/posts/{{ post.id }}{% else %}/admin/posts{% endif %}" class="admin-editor">
+  <div class="editor-main">
+    <label for="title">标题</label>
+    <input id="title" name="title" value="{{ post.title }}" required placeholder="给文章一个清晰的标题">
+
+    <div class="field-row">
+      <div>
+        <label for="slug">Slug</label>
+        <input id="slug" name="slug" value="{{ post.slug }}" placeholder="留空则从标题生成">
+      </div>
+      <div>
+        <label for="status">状态</label>
+        <select id="status" name="status">
+          <option value="draft" {% if post.status == "draft" %}selected{% endif %}>草稿</option>
+          <option value="review" {% if post.status == "review" %}selected{% endif %}>审核中</option>
+          <option value="published" {% if post.status == "published" %}selected{% endif %}>已发布</option>
+        </select>
+      </div>
+    </div>
+
+    <label for="summary">摘要</label>
+    <textarea id="summary" name="summary" rows="3" placeholder="读者会看到；留空时用正文截取">{{ post.summary }}</textarea>
+
+    <label for="body_md">正文 Markdown</label>
+    <textarea id="body_md" name="body_md" rows="26" spellcheck="true">{{ post.body_md }}</textarea>
+    <p class="muted small">在正文单独一行写 <code>[[chart:图表ID]]</code> 可把图表插到任意位置；未插入的图表显示在文末。右侧图表列表提供“插入正文”。</p>
+    <div class="post-media-tools">
+      <label for="post-media-file">插入图片 / 短小视频</label>
+      <input id="post-media-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/webm">
+      <div class="post-media-actions">
+        <button class="button ghost small" type="button" id="post-media-insert">上传并插入</button>
+        <button class="button ghost small" type="button" id="post-media-cover">上传并设为封面</button>
+        <span class="muted small" id="post-media-status"></span>
+      </div>
+      <p class="muted small">图片最大 8 MB，视频最大 12 MB；视频将以本机文件提供，不做转码。</p>
+      <div class="post-media-actions">
+        <button class="button ghost small" type="button" id="open-media-picker">从媒体库选择</button>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div>
+        <label for="tags">标签</label>
+        <input id="tags" name="tags" value="{{ post.tags }}" placeholder="Rust, AI, 图表">
+      </div>
+      <div>
+        <label for="cover_image">封面图 URL（可选）</label>
+        <input id="cover_image" name="cover_image" value="{{ post.cover_image }}" placeholder="https://...">
+      </div>
+    </div>
+
+    <label class="checkbox"><input type="checkbox" name="pinned" value="on" {% if post.pinned %}checked{% endif %}> 置顶</label>
+
+    <div class="editor-actions">
+      <button class="button" type="submit">保存</button>
+      {% if post.id %}<span class="muted">保存后按状态决定是否触发后台任务。</span>{% endif %}
+    </div>
+  </div>
+
+  <aside class="ai-panel" data-post-id="{{ post.id }}">
+    <p class="eyebrow">AI EDITING · DIFF FIRST</p>
+    <h2>AI 编辑文章</h2>
+    <p class="muted small">给出修改目标，可附上材料或网页链接。AI 返回完整修订稿，先在 diff 中查看，再由你决定是否应用。</p>
+    <div class="ai-edit">
+      <label for="ai-edit-mode">工作模式</label>
+      <select id="ai-edit-mode">
+        <option value="edit">修改现有正文</option>
+        <option value="create">从零创作</option>
+      </select>
+      <p class="muted small" id="ai-edit-mode-note">对比后应用；创作模式会建议标题、摘要和标签。</p>
+      <label for="ai-edit-prompt">修改提示词</label>
+      <textarea id="ai-edit-prompt" rows="4" placeholder="例如：把开头改得更有问题意识，并引用我上传的访谈材料；保持原有结构和事实。"></textarea>
+      <label for="ai-edit-files">上传材料（可多选）</label>
+      <input id="ai-edit-files" type="file" multiple accept=".md,.markdown,.txt,.html,.htm,.pdf,.docx,.csv,.tsv,.json">
+      <label for="ai-edit-urls">网页参考链接（每行一个，最多 5 个）</label>
+      <textarea id="ai-edit-urls" rows="3" placeholder="https://example.com/article&#10;https://another.org/report"></textarea>
+      <div class="ai-edit-actions">
+        <button type="button" class="button small" id="ai-edit-run">生成修改建议</button>
+        <span class="muted small" id="ai-edit-status">不会自动改正文</span>
+      </div>
+      <p class="muted small">材料支持 Markdown/TXT/HTML/PDF/DOCX/CSV/JSON；单文件 2 MB，总计 5 MB。网页只抓取公开 http/https 正文。</p>
+      <div id="ai-edit-sources" class="ai-edit-sources" hidden></div>
+    </div>
+    {% if post.id %}
+    <h3>当前文章的图表</h3>
+    <div class="mini-list">
+      {% for chart in charts %}
+      <div class="mini-item">
+        <div><a href="/admin/charts/{{ chart.id }}/edit">{{ chart.title }}</a><div class="muted small">{{ chart.kind }} · {{ chart.status }}{% if chart.stale %} · 数据过期{% endif %}</div></div>
+        <div class="mini-actions">
+          <button class="link-button" type="button" data-insert-chart="{{ chart.id }}">插入正文</button>
+          <button class="link-button" type="button" data-refresh-chart="{{ chart.id }}">刷新</button>
+        </div>
+      </div>
+      {% else %}<p class="muted small">还没有图表。</p>{% endfor %}
+    </div>
+    <a class="button ghost small" href="/admin/charts/new?post_id={{ post.id }}">新建图表</a>
+    {% endif %}
+    {% if post.id %}
+    <h3>最近 AI 会话</h3>
+    <div class="mini-list">
+      {% for session in sessions %}
+      <div class="mini-item"><span>{{ session.purpose }}</span><span class="muted small">{{ session.status }} · {{ session.created }}</span></div>
+      {% else %}<p class="muted small">还没有会话。</p>{% endfor %}
+    </div>
+    {% endif %}
+  </aside>
+</form>
+
+<div id="ai-diff-modal" class="diff-modal" hidden>
+  <div class="diff-panel" role="dialog" aria-modal="true" aria-labelledby="diff-title">
+    <header class="diff-toolbar">
+      <div>
+        <p class="eyebrow">AI PROPOSAL</p>
+        <h2 id="diff-title">修改建议</h2>
+        <p class="muted small" id="diff-meta"></p>
+        <div id="diff-metadata" class="diff-metadata" hidden></div>
+      </div>
+      <div class="diff-actions">
+        <div class="diff-view-toggle" role="group" aria-label="Diff 视图">
+          <button type="button" class="button ghost small" data-diff-mode="split">并排</button>
+          <button type="button" class="button ghost small" data-diff-mode="unified">统一</button>
+        </div>
+        <button type="button" class="button" id="ai-diff-apply">应用修改</button>
+        <button type="button" class="button ghost" id="ai-diff-discard">丢弃</button>
+      </div>
+    </header>
+    <div id="ai-diff-output" class="diff-output"></div>
+    <footer class="diff-footer">
+      <div id="ai-diff-sources" class="diff-sources"></div>
+      <p class="muted small">应用后还需要点击文章“保存”才会写入数据库。AI 不会自动覆盖原文。</p>
+    </footer>
+  </div>
+</div>
+
+{% if post.id %}
+<div class="admin-secondary-actions">
+  {% if post.status != "published" %}
+  <form method="post" action="/admin/posts/{{ post.id }}/publish"><button class="button" type="submit">立即发布</button></form>
+  {% else %}
+  <form method="post" action="/admin/posts/{{ post.id }}/unpublish"><button class="button ghost" type="submit">撤回为草稿</button></form>
+  {% endif %}
+  <form method="post" action="/admin/posts/{{ post.id }}/delete" data-confirm="确定删除这篇文章及其图表/卡片？此操作不可撤销。"><button class="button danger" type="submit">删除文章</button></form>
+</div>
+{% endif %}
+{% include "partials/media_picker.html" %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/admin.js" defer></script>{% endblock %}

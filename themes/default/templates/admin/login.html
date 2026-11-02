@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}登录 · {{ site.title }}{% endblock %}
+{% block content %}
+<section class="auth-shell">
+  <div class="auth-card">
+    <p class="eyebrow">ADMIN</p>
+    <h1>管理后台</h1>
+    <p class="muted">单作者站点。只有配置中的管理员邮箱可以登录。</p>
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+    <form method="post" action="/admin/login" class="stack">
+      <label for="email">邮箱</label>
+      <input id="email" name="email" type="email" autocomplete="username" required>
+      <label for="password">密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button class="button" type="submit">登录</button>
+    </form>
+    <p class="muted small">没有账号？先在服务器生成账号</p>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ view.site.title }} · {{ view.site.description }}{% endblock %}
+{% block content %}
+<section class="hero hero-banner">
+  <div class="hero-bg" aria-hidden="true">
+    <img src="{{ view.site.hero_image }}" alt="" loading="eager" onerror="this.onerror=null;this.src='/static/hero-banner.svg'">
+  </div>
+  <div class="hero-copy">
+    <p class="eyebrow">文章 · 图表 · AI 协作</p>
+    <h1>{{ view.site.title }}</h1>
+    <p class="hero-lead">{{ view.site.description }}</p>
+    <div class="hero-actions">
+      <a class="button ghost" href="#latest">浏览最新文章</a>
+    </div>
+  </div>
+</section>
+
+{% if view.pinned %}
+<section class="section">
+  <div class="section-head">
+    <h2>置顶</h2>
+    <span class="muted">精选阅读</span>
+  </div>
+  <div class="post-list pinned-list">
+    {% for post in view.pinned %}
+    <article class="post-card">
+      <a class="post-card-cover" href="/posts/{{ post.slug }}" aria-hidden="true">
+        <img src="{{ post.cover_image }}" alt="" loading="lazy" onerror="this.onerror=null;this.src='/static/default-cover.svg'">
+      </a>
+      <div class="post-card-main">
+        <div class="post-meta">
+          <span class="pill">置顶</span>
+          <time>{{ post.date }}</time>
+          <span>{{ post.reading_minutes }} 分钟</span>
+          {% if post.category %}<a class="post-category" href="/categories/{{ post.category.slug }}">{{ post.category.name }}</a>{% endif %}
+        </div>
+        <h3><a href="/posts/{{ post.slug }}">{{ post.title }}</a></h3>
+        <p>{{ post.summary }}</p>
+        <div class="tag-row">
+          {% for tag in post.tags %}<a class="tag" href="/tags/{{ tag.slug }}">#{{ tag.name }}</a>{% endfor %}
+        </div>
+      </div>
+      <span class="arrow" aria-hidden="true">↗</span>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="section" id="latest">
+  <div class="section-head">
+    <h2>最新文章</h2>
+    <a class="muted" href="/archive">全部归档 →</a>
+  </div>
+  <div class="post-list">
+    {% for post in view.posts %}
+    <article class="post-card">
+      <a class="post-card-cover" href="/posts/{{ post.slug }}" aria-hidden="true">
+        <img src="{{ post.cover_image }}" alt="" loading="lazy" onerror="this.onerror=null;this.src='/static/default-cover.svg'">
+      </a>
+      <div class="post-card-main">
+        <div class="post-meta">
+          <time>{{ post.date }}</time>
+          <span>{{ post.reading_minutes }} 分钟</span>
+          {% if post.category %}<a class="post-category" href="/categories/{{ post.category.slug }}">{{ post.category.name }}</a>{% endif %}
+          {% if post.pinned %}<span class="pill">置顶</span>{% endif %}
+        </div>
+        <h3><a href="/posts/{{ post.slug }}">{{ post.title }}</a></h3>
+        <p>{{ post.summary }}</p>
+        <div class="tag-row">
+          {% for tag in post.tags %}<a class="tag" href="/tags/{{ tag.slug }}">#{{ tag.name }}</a>{% endfor %}
+        </div>
+      </div>
+      <span class="arrow" aria-hidden="true">↗</span>
+    </article>
+    {% else %}
+    <div class="empty-state">
+      <p>还没有已发布文章。</p>
+      <p class="muted">运行 <code>cargo loco task demo:seed</code> 写入示例内容，或登录 <a href="/admin">/admin</a> 开始写作。</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if view.categories %}
+<section class="section">
+  <div class="section-head"><h2>分类</h2><span class="muted">按主题浏览</span></div>
+  <div class="tag-cloud">
+    {% for category in view.categories %}
+    <a class="tag big" href="/categories/{{ category.slug }}">{{ category.name }} <span>{{ category.count }}</span></a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="section two-col">
+  <div>
+    <div class="section-head"><h2>标签</h2><span class="muted">按主题漫游</span></div>
+    <div class="tag-cloud">
+      {% for tag in view.tags %}
+      <a class="tag big" href="/tags/{{ tag.slug }}">#{{ tag.name }} <span>{{ tag.count }}</span></a>
+      {% else %}
+      <p class="muted">暂无标签。</p>
+      {% endfor %}
+    </div>
+  </div>
+  <aside class="ai-note">
+    <p class="eyebrow">ABOUT</p>
+    <h2>关于本站</h2>
+    <p>这里收录文章、图表和长期整理的笔记。没有信息流，按时间归档，慢慢读。</p>
+    <a class="text-link" href="/archive">从归档开始阅读 →</a>
+  </aside>
+</section>
+{% endblock %}

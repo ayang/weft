@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block body_class %}admin-body{% endblock %}
+{% block page_class %}page-admin{% endblock %}
+{% block title %}图表 · {{ site.title }}{% endblock %}
+{% block content %}
+{% include "partials/admin_nav.html" %}
+<section class="admin-head">
+  <div><p class="eyebrow">ADMIN / CHARTS</p><h1>图表</h1><p class="muted">spec + 数据缓存；按 refresh_cron 后台刷新。</p></div>
+  <div class="admin-actions">
+    <a class="button" href="/admin/charts/new">新建图表</a>
+    <a class="button ghost" href="/admin">返回</a>
+  </div>
+</section>
+<section class="section">
+  <div class="table-wrap">
+    <table class="admin-table">
+      <thead><tr><th>标题</th><th>文章</th><th>来源</th><th>状态</th><th>cron</th><th>最近成功</th><th>失败</th><th></th></tr></thead>
+      <tbody>
+        {% for chart in charts %}
+        <tr>
+          <td><a href="/admin/charts/{{ chart.id }}/edit">{{ chart.title }}</a><div class="muted small">{{ chart.kind }}</div></td>
+          <td class="muted">#{{ chart.post_id }}</td>
+          <td><code>{{ chart.source }}</code></td>
+          <td><span class="status status-{{ chart.status }}">{{ chart.status }}</span></td>
+          <td class="muted"><code>{{ chart.refresh_cron or "—" }}</code></td>
+          <td class="muted">{{ chart.last_success or "—" }}</td>
+          <td>{% if chart.failure_count > 0 %}<span class="danger">{{ chart.failure_count }}</span>{% else %}0{% endif %}</td>
+          <td class="row-actions"><form method="post" action="/admin/charts/{{ chart.id }}/refresh"><button class="link-button" type="submit">刷新</button></form></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="muted">还没有图表。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}<script src="/static/admin.js" defer></script>{% endblock %}

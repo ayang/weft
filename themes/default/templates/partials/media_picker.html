@@ -1,0 +1,20 @@
+<div id="media-picker-modal" class="media-picker-modal" hidden>
+  <div class="media-picker-panel" role="dialog" aria-modal="true" aria-labelledby="media-picker-title">
+    <header class="media-picker-head">
+      <div><p class="eyebrow">MEDIA LIBRARY</p><h2 id="media-picker-title">选择已上传媒体</h2></div>
+      <button class="chart-modal-close" type="button" id="media-picker-close" aria-label="关闭">×</button>
+    </header>
+    <div class="media-picker-toolbar">
+      <input id="media-picker-search" type="search" placeholder="搜索文件名…">
+      <select id="media-picker-kind"><option value="">全部类型</option><option value="image">图片</option><option value="video">视频</option></select>
+      <span class="muted small" id="media-picker-status"></span>
+    </div>
+    <div id="media-picker-results" class="media-picker-results"></div>
+    <footer class="media-picker-footer">
+      <button class="button ghost" type="button" id="media-picker-cancel">取消</button>
+      <button class="button ghost" type="button" id="media-picker-cover">设为封面</button>
+      <button class="button" type="button" id="media-picker-insert">插入正文</button>
+      <button class="button" type="button" id="media-picker-hero" hidden>设为首页 Banner</button>
+    </footer>
+  </div>
+</div>
