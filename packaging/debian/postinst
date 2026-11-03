@@ -1,0 +1,60 @@
+#!/bin/sh
+# Weft Debian postinst: system user, state dirs, env file, migrations, units.
+set -e
+
+case "$1" in
+  configure) ;;
+  abort-upgrade|abort-remove|abort-deconfigure) exit 0 ;;
+  *) exit 0 ;;
+esac
+
+if ! getent group weft >/dev/null 2>&1; then
+  addgroup --system weft
+fi
+if ! getent passwd weft >/dev/null 2>&1; then
+  adduser --system --ingroup weft --home /usr/share/weft \
+    --no-create-home --shell /usr/sbin/nologin weft
+fi
+
+install -d -m 0750 -o weft -g weft \
+  /var/lib/weft /var/lib/weft/media/uploads /var/backups/weft
+install -d -m 0750 -o root -g weft /etc/weft
+# dpkg installs conffiles as root:root; the service user must be able to read
+# them, but not the whole world. weft.env is generated below.
+chown root:weft /etc/weft/production.yaml /etc/weft/scheduler.yaml
+chmod 0640 /etc/weft/production.yaml /etc/weft/scheduler.yaml
+
+if [ ! -f /etc/weft/weft.env ]; then
+  install -m 0640 -o root -g weft /usr/share/weft/weft.env.example /etc/weft/weft.env
+  jwt="$(head -c 48 /dev/urandom | base64 | tr -d '\n')"
+  token="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$jwt|" /etc/weft/weft.env
+  sed -i "s|^AGENT_API_TOKEN=.*|AGENT_API_TOKEN=$token|" /etc/weft/weft.env
+  chown root:weft /etc/weft/weft.env
+  chmod 0640 /etc/weft/weft.env
+  echo "Weft: generated /etc/weft/weft.env with a random JWT secret and Agent token."
+  echo "Weft: edit ADMIN_EMAIL and SITE_BASE_URL before exposing the site."
+fi
+
+# Apply migrations as the service user so the database is owned by weft.
+# If migration fails, do not start the new binary against an old schema.
+MIGRATED=1
+if [ -x /usr/bin/weft-cli ]; then
+  if ! su -s /bin/sh weft -c \
+    'cd /usr/share/weft && set -a && . /etc/weft/weft.env && set +a && /usr/bin/weft-cli db migrate'; then
+    MIGRATED=0
+    echo "Weft: database migration failed. Fix /etc/weft/weft.env, then run:" >&2
+    echo "  sudo -u weft sh -c 'cd /usr/share/weft && set -a && . /etc/weft/weft.env && set +a && weft-cli db migrate'" >&2
+    echo "Weft: services were not started." >&2
+  fi
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload || true
+  systemctl enable weft.service weft-scheduler.service weft-backup.timer >/dev/null 2>&1 || true
+  if [ "$MIGRATED" = 1 ]; then
+    systemctl start weft.service weft-scheduler.service weft-backup.timer >/dev/null 2>&1 || true
+  fi
+fi
+
+exit 0

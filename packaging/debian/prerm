@@ -1,0 +1,22 @@
+#!/bin/sh
+# Weft prerm: stop services before upgrades and removals. Disable them only on
+# remove/deconfigure; postinst brings them back after the new binary is in place.
+set -e
+
+case "$1" in
+  remove|deconfigure|upgrade)
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl stop weft-scheduler.service weft.service weft-backup.timer >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+
+case "$1" in
+  remove|deconfigure)
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl disable weft-scheduler.service weft.service weft-backup.timer >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+
+exit 0

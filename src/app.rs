@@ -84,6 +84,14 @@ impl Hooks for App {
         }
         let settings = crate::data::settings::Settings::from_context(&ctx)?;
         ctx.shared_store.insert(Limits::new(&settings));
+        crate::media::init_upload_dir(settings.media.upload_dir.clone());
+        if let Err(err) = tokio::fs::create_dir_all(&settings.media.upload_dir).await {
+            tracing::warn!(
+                dir = %settings.media.upload_dir.display(),
+                error = %err,
+                "could not create media directory"
+            );
+        }
         if let Err(err) = chart_recipes::Model::seed_defaults(&ctx.db).await {
             tracing::warn!(error = %err, "could not seed default chart recipes");
         }

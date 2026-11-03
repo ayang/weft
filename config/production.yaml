@@ -7,8 +7,8 @@
 # secret or a localhost database is worse than one that refuses to boot.
 #
 # The variables this file requires:
-#   DATABASE_URL, JWT_SECRET, HOST, and the MAILER_* / REDIS_URL set below,
-#   depending on which features you generated.
+#   DATABASE_URL, JWT_SECRET, SITE_BASE_URL, and the MAILER_* / REDIS_URL set
+#   below, depending on which features you generated.
 
 # Application logging configuration
 logger:
@@ -59,7 +59,7 @@ workers:
   #   - BackgroundAsync - Workers operate asynchronously in the background, processing tasks with async capabilities.
   mode: BackgroundAsync
 
-  
+
 
 # Mailer is not used by the public site. Keep it stubbed so production does not
 # require SMTP credentials just to boot.
@@ -155,3 +155,7 @@ settings:
   jobs:
     max_attempts: 5
     page_size: 20
+  media:
+    # Uploaded images/videos. Use an absolute path in production, e.g.
+    # MEDIA_DIR=/var/lib/weft/media/uploads, so releases never wipe uploads.
+    upload_dir: <%= get_env(name="MEDIA_DIR", default="media/uploads") %>

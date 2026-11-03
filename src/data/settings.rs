@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +13,7 @@ pub struct Settings {
     pub agents: AgentSettings,
     pub charts: ChartSettings,
     pub jobs: JobSettings,
+    pub media: MediaSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +94,23 @@ pub struct ChartSettings {
 pub struct JobSettings {
     pub max_attempts: i64,
     pub page_size: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MediaSettings {
+    /// Where uploaded images and videos are written. Relative paths resolve
+    /// against the process working directory; production should use an
+    /// absolute path (and a directory outside the release tree).
+    pub upload_dir: PathBuf,
+}
+
+impl Default for MediaSettings {
+    fn default() -> Self {
+        Self {
+            upload_dir: PathBuf::from("media").join("uploads"),
+        }
+    }
 }
 
 impl Default for SiteSettings {

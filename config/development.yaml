@@ -46,7 +46,7 @@ workers:
   #   - BackgroundAsync - Workers operate asynchronously in the background, processing tasks with async capabilities.
   mode: BackgroundAsync
 
-  
+
 
 # Mailer Configuration.
 mailer:
@@ -169,3 +169,5 @@ settings:
   jobs:
     max_attempts: 5
     page_size: 20
+  media:
+    upload_dir: <%= get_env(name="MEDIA_DIR", default="media/uploads") %>

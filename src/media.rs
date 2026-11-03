@@ -1,9 +1,14 @@
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use loco_rs::prelude::*;
 use uuid::Uuid;
 
 use crate::models::medias;
+
+/// Set once at boot from `settings.media.upload_dir` so uploads, the public
+/// `/media/{filename}` route and background tasks all agree on one directory.
+static UPLOAD_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_VIDEO_BYTES: usize = 12 * 1024 * 1024;
@@ -104,8 +109,19 @@ pub async fn store(
     .map_err(Error::from)
 }
 
+/// Point media storage at the configured directory.
+///
+/// Called from `App::after_context`. The fallback keeps `cargo test` and
+/// one-off tasks working when no app context has booted.
+pub fn init_upload_dir(dir: impl Into<PathBuf>) {
+    let _ = UPLOAD_DIR.set(dir.into());
+}
+
 pub fn upload_dir() -> PathBuf {
-    PathBuf::from("media").join("uploads")
+    UPLOAD_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("media").join("uploads"))
 }
 
 pub fn public_url(filename: &str) -> String {

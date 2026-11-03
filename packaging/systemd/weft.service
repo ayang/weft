@@ -1,0 +1,40 @@
+[Unit]
+Description=Weft (Loco application)
+Documentation=https://loco.rs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=weft
+Group=weft
+WorkingDirectory=/usr/share/weft
+EnvironmentFile=/etc/weft/weft.env
+ExecStart=/usr/bin/weft-cli start
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0027
+SyslogIdentifier=weft
+
+# Runtime state: SQLite database + media uploads (/var/lib/weft).
+StateDirectory=weft
+StateDirectoryMode=0750
+
+# Hardening. Package data under /usr/share/weft is read-only.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Tuned for a 1-2 GB VPS.
+MemoryMax=900M
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

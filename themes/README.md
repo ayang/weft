@@ -35,4 +35,4 @@ admin template. Keep the `/static/...` URLs unchanged so assets resolve to
 `themes/<theme>/static`.
 
 Do not put uploads in the theme directory. Runtime media is stored under
-`media/uploads/` and served from `/media/...`.
+`media/uploads/` (configurable with `MEDIA_DIR`) and served from `/media/...`.

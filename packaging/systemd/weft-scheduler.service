@@ -1,0 +1,39 @@
+[Unit]
+Description=Weft scheduler (cron-driven maintenance tasks)
+Documentation=https://loco.rs
+After=network-online.target weft.service
+Wants=network-online.target
+PartOf=weft.service
+
+[Service]
+Type=simple
+User=weft
+Group=weft
+WorkingDirectory=/usr/share/weft
+EnvironmentFile=/etc/weft/weft.env
+ExecStart=/usr/bin/weft-cli scheduler --config /etc/weft/scheduler.yaml
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0027
+SyslogIdentifier=weft-scheduler
+
+# The scheduler shells out to `weft-cli task ...`; tasks write to the database.
+StateDirectory=weft
+StateDirectoryMode=0750
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+MemoryMax=300M
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

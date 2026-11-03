@@ -1,0 +1,27 @@
+#!/bin/sh
+# Weft postrm: refresh systemd state. On purge, drop the generated env file and
+# the service account, but never delete the database or uploads.
+set -e
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl reset-failed weft.service weft-scheduler.service \
+    weft-backup.service weft-backup.timer >/dev/null 2>&1 || true
+fi
+
+if [ "$1" = purge ]; then
+  rm -f /etc/weft/weft.env
+  rmdir /etc/weft 2>/dev/null || true
+
+  if getent passwd weft >/dev/null 2>&1; then
+    deluser --system weft >/dev/null 2>&1 || true
+  fi
+  if getent group weft >/dev/null 2>&1; then
+    delgroup --system weft >/dev/null 2>&1 || true
+  fi
+
+  echo "Weft: kept /var/lib/weft (database and uploads) and /var/backups/weft."
+  echo "Weft: remove them manually if you no longer need the data."
+fi
+
+exit 0

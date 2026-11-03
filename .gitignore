@@ -24,5 +24,8 @@ target/
 # local database backups
 backups/
 
+# packaged artifacts
+dist/
+
 # runtime media uploads
 media/
