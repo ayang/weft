@@ -10,13 +10,13 @@ Weft 是一个 **AI 原生个人站点**：人类写作，AI 辅助编辑、作�
 
 ![首页](docs/screenshots/home.png)
 
-![文章页与动态图表](docs/screenshots/post.png)
+![文章页：标题、元信息、正文与相关阅读](docs/screenshots/post.png)
 
-![图表工作室：文件解析、可视化表格与实时预览](docs/screenshots/chart-studio.png)
+![图表工作室：主栏实时预览、数据与格式，右侧 AI 提示词](docs/screenshots/chart-studio.png)
 
 ![AI 提供商、模型与 Key 设置](docs/screenshots/ai-settings.png)
 
-![AI 文章修改 diff：先对比，再应用](docs/screenshots/ai-diff.png)
+![AI 文章修改 diff：窄行号、并排/统一视图，手动应用](docs/screenshots/ai-diff.png)
 
 ## 实现状态（M0–M5）
 
@@ -25,11 +25,11 @@ Weft 是一个 **AI 原生个人站点**：人类写作，AI 辅助编辑、作�
 | M0 | 完成 | Loco 1.2 骨架、SQLite WAL、健康检查、动态首页/文章页 |
 | M1 | 完成 | posts/tags、管理员 cookie 登录、CRUD/状态流转、`.md`/`llms.txt` |
 | M2 | 完成 | chart_specs/cache/recipes、图表 API、ECharts、static/sql/http 适配器、可提示词/文件的 Chart Studio、可视化数据与格式、AI 可改图表细节、高级 JSON 实时预览 |
-| M3 | 完成 | 5 个 Worker、Loco Scheduler、cron 到期刷新、退避/重试、发布触发 |
+| M3 | 完成 | refresh_chart / index_post / cleanup_cache 后端任务、Loco Scheduler、cron 到期刷新、退避/重试、发布触发 |
 | M4 | 完成 | ai_sessions、意图驱动的 AI 文章编辑/从零创作 + 材料/网页引用 + diff 应用、多提供商 AI 设置页（DeepSeek 等） |
 | M5 | 完成 | Agent API、ETag/Last-Modified、缓存、限流/token、README、集成测试 |
 
-最终验证：`cargo fmt --all -- --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 全部通过；集成测试使用离线 AI，不访问外网。
+最终验证：`cargo fmt --all -- --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test --release` 全部通过；集成测试使用离线 AI，不访问外网。Debug 测试需要系统 inotify watch 配额可用。
 
 ## 快速开始
 
@@ -235,7 +235,8 @@ SCHEDULER_CONFIG=config/scheduler.yaml cargo loco scheduler --config config/sche
 - `/admin`：文章/图表/AI 会话概览
 - `/admin/settings/site`：站点名称、品牌名、副标题、描述、作者、首页 Banner、站点 URL、每页文章数；Banner 可直接上传图片或填写 URL，留空使用默认横幅；保存后立即生效
 - `/admin/settings/ai`：AI 提供商、Base URL、模型与 Key；支持 DeepSeek / OpenAI / OpenRouter / Moonshot / Qwen / Groq / SiliconFlow / Ollama 预设
-- `/admin/posts/new`、`/admin/posts/:id/edit`：Markdown 编辑、标签、草稿/审核/发布流转
+- `/admin/posts`：全部文章管理；`/admin/posts/new`、`/admin/posts/:id/edit`：Markdown 编辑、标签、草稿/审核/发布流转
+- `/admin/media`：媒体库上传、搜索、复用；`/admin/categories`：AI 全站分类
 - AI 文章编辑面板：提示词 + 上传材料 + 网页参考，返回完整修订稿并在 diff 中确认；不再提供无上下文的“一键生成摘要/卡片/Mermaid/SQL/代码”按钮。摘要仍由作者直接填写
 - `/admin/charts`：图表列表、手动刷新、cron、失败退避状态
 - **AI 自动分类**：管理端一键读取全站文章生成分类并归类，无需手工维护分类；文章列表和分类页自动展示
@@ -256,7 +257,7 @@ SCHEDULER_CONFIG=config/scheduler.yaml cargo loco scheduler --config config/sche
 | 端点 | 说明 |
 |---|---|
 | `GET /api/agent/posts?since=RFC3339&limit=50` | 已发布文章清单，支持 ETag / Last-Modified |
-| `GET /api/agent/posts/:slug` | 元数据 + Markdown + 卡片 + 图表引用 |
+| `GET /api/agent/posts/:slug` | 元数据 + Markdown + 图表引用 |
 | `GET /api/agent/charts/:id` | 图表 spec + 最新数据 + ETag |
 
 设置 `AGENT_API_TOKEN` 后，所有 Agent 请求需要：
