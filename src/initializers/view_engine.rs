@@ -8,11 +8,22 @@ use loco_rs::{
 };
 use tracing::info;
 
-const I18N_DIR: &str = "assets/i18n";
-// NOTE: must live OUTSIDE `I18N_DIR` so the locale scan doesn't also pick it up;
-// otherwise the shared resource is registered twice and bundle building fails
-// ("Failed to add FTL resources to the bundle"). See loco-rs/loco#1749.
-const I18N_SHARED: &str = "assets/shared.ftl";
+// NOTE: `I18N_SHARED` must live OUTSIDE `I18N_DIR` so the locale scan doesn't
+// also pick it up; otherwise the shared resource is registered twice and bundle
+// building fails ("Failed to add FTL resources to the bundle").
+// See loco-rs/loco#1749.
+//
+// Runtime resources are resolved against `WEFT_APP_DIR` rather than the current
+// working directory. A `.deb` installs them under `/usr/share/weft` and points
+// the systemd units here, so CLI tools and the service agree no matter where
+// they are started from.
+fn app_dir() -> std::path::PathBuf {
+    match std::env::var("WEFT_APP_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => std::path::PathBuf::from(dir),
+        _ => std::path::PathBuf::from("."),
+    }
+}
+
 #[allow(clippy::module_name_repetitions)]
 pub struct ViewEngineInitializer;
 
@@ -29,13 +40,15 @@ impl Initializer for ViewEngineInitializer {
         } else {
             theme.trim()
         };
-        let views_dir = std::path::PathBuf::from("themes")
-            .join(theme)
-            .join("templates");
-        let tera_engine = if std::path::Path::new(I18N_DIR).exists() {
+        let base = app_dir();
+        let views_dir = base.join("themes").join(theme).join("templates");
+        let i18n_dir = base.join("assets/i18n");
+        let i18n_shared = base.join("assets/shared.ftl");
+        let tera_engine = if i18n_dir.exists() {
+            let shared = [i18n_shared];
             let arc = std::sync::Arc::new(
-                ArcLoader::builder(&I18N_DIR, unic_langid::langid!("en-US"))
-                    .shared_resources(Some(&[I18N_SHARED.into()]))
+                ArcLoader::builder(&i18n_dir, unic_langid::langid!("en-US"))
+                    .shared_resources(Some(&shared))
                     .customize(|bundle| bundle.set_use_isolating(false))
                     .build()
                     .map_err(|e| Error::string(&e.to_string()))?,

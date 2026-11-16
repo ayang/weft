@@ -1,7 +1,11 @@
 #!/bin/sh
-# Weft postrm: refresh systemd state. On purge, drop the generated env file and
-# the service account, but never delete the database or uploads.
+# Weft postrm: refresh systemd state. On purge, drop the generated env file but
+# keep the service account, database, uploads and backups: deleting the account
+# would orphan those files and break a later reinstall.
 set -e
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload >/dev/null 2>&1 || true
@@ -10,18 +14,17 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 if [ "$1" = purge ]; then
-  rm -f /etc/weft/weft.env
+  if command -v deb-systemd-helper >/dev/null 2>&1; then
+    deb-systemd-helper purge weft.service weft-scheduler.service >/dev/null 2>&1 || true
+    deb-systemd-helper purge weft-backup.timer >/dev/null 2>&1 || true
+  fi
+
+  rm -f /etc/weft/weft.env /etc/weft/initial-admin.txt
   rmdir /etc/weft 2>/dev/null || true
 
-  if getent passwd weft >/dev/null 2>&1; then
-    deluser --system weft >/dev/null 2>&1 || true
-  fi
-  if getent group weft >/dev/null 2>&1; then
-    delgroup --system weft >/dev/null 2>&1 || true
-  fi
-
-  echo "Weft: kept /var/lib/weft (database and uploads) and /var/backups/weft."
-  echo "Weft: remove them manually if you no longer need the data."
+  echo "Weft: kept the weft system user and /var/lib/weft (database and uploads)."
+  echo "Weft: also kept /var/backups/weft. Remove them manually if you no longer"
+  echo "Weft: need the data: deluser --system weft; rm -rf /var/lib/weft /var/backups/weft"
 fi
 
 exit 0

@@ -1,0 +1,792 @@
+openapi: 3.1.0
+info:
+  title: Weft Agent API
+  version: "1.0.0"
+  description: |
+    Read and write a Weft site from an external agent.
+
+    Authenticate writes (and draft reads) with a database-backed Agent Key:
+
+        Authorization: Bearer weft_<prefix>_<secret>
+
+    Public reads of published content work without a key. The legacy
+    `AGENT_API_TOKEN` config value remains accepted but is read-only.
+servers:
+  - url: "{baseUrl}/api/agent"
+    variables:
+      baseUrl:
+        default: https://example.com
+paths:
+  /me:
+    get:
+      summary: Verify the current key and inspect scopes
+      operationId: whoami
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current principal and site
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authenticated, actor, scopes, site, agent_api]
+                properties:
+                  authenticated:
+                    type: boolean
+                  actor:
+                    type: string
+                  scopes:
+                    type: object
+                    required: [read, write, private_read]
+                    properties:
+                      read:
+                        type: boolean
+                      write:
+                        type: boolean
+                      private_read:
+                        type: boolean
+                  site:
+                    type: object
+                    additionalProperties: true
+                  agent_api:
+                    type: string
+  /posts:
+    get:
+      summary: List posts
+      operationId: listPosts
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/StatusFilter"
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Post summaries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [site, generated_at, count, posts]
+                properties:
+                  site:
+                    type: object
+                    additionalProperties: true
+                  generated_at:
+                    type: string
+                    format: date-time
+                  count:
+                    type: integer
+                  posts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PostSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Create a post (defaults to draft)
+      operationId: createPost
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostCreate"
+      responses:
+        "201":
+          description: Created post detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /posts/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      summary: Read a post (drafts require a key)
+      operationId: getPost
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Post detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      summary: Partially update a post
+      operationId: updatePost
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostUpdate"
+      responses:
+        "200":
+          description: Updated post detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      summary: Delete a post and its charts
+      operationId: deletePost
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /posts/{slug}/charts:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      summary: List charts attached to a post
+      operationId: listPostCharts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Chart references
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [post_id, slug, count, charts]
+                properties:
+                  post_id:
+                    type: integer
+                  slug:
+                    type: string
+                  count:
+                    type: integer
+                  charts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChartRef"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      summary: Create a chart for a post
+      operationId: createChart
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChartWrite"
+      responses:
+        "201":
+          description: Created chart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChartDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /charts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ChartId"
+    get:
+      summary: Read a chart spec and latest data
+      operationId: getChart
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Chart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChartDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      summary: Partially update a chart
+      operationId: updateChart
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChartUpdate"
+      responses:
+        "200":
+          description: Updated chart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChartDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Delete a chart
+      operationId: deleteChart
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /charts/{id}/refresh:
+    parameters:
+      - $ref: "#/components/parameters/ChartId"
+    post:
+      summary: Fetch chart data now
+      operationId: refreshChart
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Refreshed chart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChartDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          description: Data source fetch failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /media:
+    get:
+      summary: Search the media library
+      operationId: listMedia
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [image, video]
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Media items
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count, items]
+                properties:
+                  count:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MediaItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Upload an image or video (multipart field `file`)
+      operationId: uploadMedia
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Stored media
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaItem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "Agent Key: weft_<prefix>_<secret>"
+  parameters:
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+    ChartId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    StatusFilter:
+      name: status
+      in: query
+      description: Non-published values require a key.
+      schema:
+        type: string
+        enum: [published, draft, review, all]
+        default: published
+    Since:
+      name: since
+      in: query
+      description: RFC3339 timestamp or YYYY-MM-DD.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+  responses:
+    BadRequest:
+      description: Invalid fields or chart configuration
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing, invalid, or revoked key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Key is read-only
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Post or chart not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Slug conflict or stale expected_updated_at
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+    Tag:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+    PostSummary:
+      type: object
+      required: [id, slug, title, status, updated_at]
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+          enum: [draft, review, published]
+        pinned:
+          type: boolean
+        cover_image:
+          type: string
+        url:
+          type: string
+        markdown_url:
+          type: string
+        admin_edit_url:
+          type: string
+        published_at:
+          type: string
+        updated_at:
+          type: string
+        reading_minutes:
+          type: integer
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+    ChartRef:
+      type: object
+      required: [chart_id, title, kind, status, marker, data_url]
+      properties:
+        chart_id:
+          type: integer
+        title:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+          enum: [active, paused, error]
+        marker:
+          type: string
+          example: "[[chart:7]]"
+        data_url:
+          type: string
+    PostDetail:
+      type: object
+      required: [post, body_md, markdown, charts]
+      properties:
+        post:
+          $ref: "#/components/schemas/PostSummary"
+        body_md:
+          type: string
+        markdown:
+          type: string
+        charts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChartRef"
+    PostCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+        summary:
+          type: string
+        body_md:
+          type: string
+        status:
+          type: string
+          enum: [draft, review, published]
+          default: draft
+        pinned:
+          type: boolean
+        cover_image:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    PostUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+        summary:
+          type: string
+        body_md:
+          type: string
+        body_mode:
+          type: string
+          enum: [replace, append, prepend]
+          default: replace
+        status:
+          type: string
+          enum: [draft, review, published]
+        pinned:
+          type: boolean
+        cover_image:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        expected_updated_at:
+          type: string
+          description: The post.updated_at value you read; mismatch returns 409.
+    ChartOptions:
+      type: object
+      properties:
+        smooth:
+          type: boolean
+        stack:
+          type: boolean
+        horizontal:
+          type: boolean
+        legend:
+          type: boolean
+        labels:
+          type: boolean
+        palette:
+          type: string
+        sort:
+          type: string
+        height:
+          type: number
+        x_label:
+          type: string
+        y_label:
+          type: string
+        y_unit:
+          type: string
+        number_format:
+          type: string
+          enum: [auto, integer, one_decimal, percent, compact]
+        y_min:
+          type: number
+        y_max:
+          type: number
+        log_y:
+          type: boolean
+        data_zoom:
+          type: boolean
+        legend_position:
+          type: string
+        dual_axis:
+          type: boolean
+    ChartWrite:
+      type: object
+      required: [title]
+      description: |
+        Use blueprint mode (data/x_field/y_fields) or advanced mode
+        (render_config + data_source_config, together). Do not mix.
+      properties:
+        title:
+          type: string
+        intent:
+          type: string
+        kind:
+          type: string
+          description: Blueprint mode uses bar/line/area/pie/scatter; advanced mode accepts special ECharts types.
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        columns:
+          type: array
+          items:
+            type: string
+        x_field:
+          type: string
+        y_fields:
+          type: array
+          items:
+            type: string
+        options:
+          $ref: "#/components/schemas/ChartOptions"
+        data_source_type:
+          type: string
+          enum: [static, sql, http]
+          default: static
+        sql_query:
+          type: string
+        sql_limit:
+          type: integer
+        http_url:
+          type: string
+        http_data_path:
+          type: string
+        render_config:
+          type: object
+          additionalProperties: true
+        data_source_config:
+          type: object
+          additionalProperties: true
+        refresh_cron:
+          type: string
+          description: 7-field cron (sec min hour day month weekday year).
+        status:
+          type: string
+          enum: [active, paused]
+    ChartUpdate:
+      type: object
+      description: Partial patch. `options` is merged into existing options.
+      properties:
+        title:
+          type: string
+        intent:
+          type: string
+        kind:
+          type: string
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        columns:
+          type: array
+          items:
+            type: string
+        x_field:
+          type: string
+        y_fields:
+          type: array
+          items:
+            type: string
+        options:
+          type: object
+          additionalProperties: true
+        data_source_type:
+          type: string
+          enum: [static, sql, http]
+        sql_query:
+          type: string
+        sql_limit:
+          type: integer
+        http_url:
+          type: string
+        http_data_path:
+          type: string
+        render_config:
+          type: object
+          additionalProperties: true
+        data_source_config:
+          type: object
+          additionalProperties: true
+        refresh_cron:
+          type: string
+        status:
+          type: string
+          enum: [active, paused]
+    ChartDetail:
+      type: object
+      required: [chart_id, post_id, title, kind, source_type, status, marker, spec]
+      properties:
+        chart_id:
+          type: integer
+        post_id:
+          type: integer
+        title:
+          type: string
+        kind:
+          type: string
+        source_type:
+          type: string
+        status:
+          type: string
+        refresh_cron:
+          type: string
+        spec:
+          type: object
+          additionalProperties: true
+        data_source:
+          type: object
+          additionalProperties: true
+        data: {}
+        stale:
+          type: boolean
+        marker:
+          type: string
+        data_url:
+          type: string
+        updated_at:
+          type: string
+    MediaItem:
+      type: object
+      required: [id, url, filename, kind, mime, size, markdown]
+      properties:
+        id:
+          type: integer
+        url:
+          type: string
+        filename:
+          type: string
+        original_name:
+          type: string
+        kind:
+          type: string
+          enum: [image, video]
+        mime:
+          type: string
+        size:
+          type: integer
+        markdown:
+          type: string
+        video_marker:
+          type: string
+        created_at:
+          type: string

@@ -18,8 +18,8 @@ use std::path::Path;
 use crate::{
     controllers, initializers,
     models::{
-        ai_sessions, ai_settings, categories, chart_data_caches, chart_recipes, chart_specs,
-        embeddings, medias, post_tags, posts, site_settings, tags, users,
+        agent_api_keys, ai_sessions, ai_settings, categories, chart_data_caches, chart_recipes,
+        chart_specs, embeddings, medias, post_tags, posts, site_settings, tags, users,
     },
     security::Limits,
     tasks,
@@ -104,6 +104,7 @@ impl Hooks for App {
             .add_route(controllers::llms::routes())
             .add_route(controllers::chart_api::routes())
             .add_route(controllers::agent_api::routes())
+            .add_route(controllers::agent_skill::routes())
             .add_route(controllers::admin::routes())
     }
 
@@ -120,6 +121,9 @@ impl Hooks for App {
         tasks.register(tasks::user_delete::UserDelete);
         tasks.register(tasks::admin_create::AdminCreate);
         tasks.register(tasks::admin_reset::AdminReset);
+        tasks.register(tasks::agent_key_create::AgentKeyCreate);
+        tasks.register(tasks::agent_key_list::AgentKeyList);
+        tasks.register(tasks::agent_key_revoke::AgentKeyRevoke);
         tasks.register(tasks::db_backup::DbBackup);
         tasks.register(tasks::demo_seed::DemoSeed);
         tasks.register(tasks::charts_refresh_due::ChartsRefreshDue);
@@ -132,6 +136,7 @@ impl Hooks for App {
         truncate_table(&ctx.db, chart_data_caches::Entity).await?;
         truncate_table(&ctx.db, embeddings::Entity).await?;
         truncate_table(&ctx.db, ai_sessions::Entity).await?;
+        truncate_table(&ctx.db, agent_api_keys::Entity).await?;
         truncate_table(&ctx.db, ai_settings::Entity).await?;
         truncate_table(&ctx.db, site_settings::Entity).await?;
         truncate_table(&ctx.db, medias::Entity).await?;

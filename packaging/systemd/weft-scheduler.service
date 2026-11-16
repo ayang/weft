@@ -10,6 +10,7 @@ Type=simple
 User=weft
 Group=weft
 WorkingDirectory=/usr/share/weft
+Environment=WEFT_APP_DIR=/usr/share/weft
 EnvironmentFile=/etc/weft/weft.env
 ExecStart=/usr/bin/weft-cli scheduler --config /etc/weft/scheduler.yaml
 Restart=on-failure

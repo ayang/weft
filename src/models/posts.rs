@@ -1,6 +1,6 @@
 use chrono::{DateTime, FixedOffset, Local};
 use loco_rs::prelude::*;
-use sea_orm::{DatabaseTransaction, Statement};
+use sea_orm::{sea_query::Expr, DatabaseBackend, DatabaseTransaction, Statement};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -42,6 +42,56 @@ pub struct PostParams {
     pub cover_image: String,
     #[serde(default)]
     pub tags: Vec<String>,
+}
+
+/// Partial update used by the Agent API. Omitted fields keep their current
+/// value; empty strings clear nullable columns.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct PostPatch {
+    pub title: Option<String>,
+    pub slug: Option<String>,
+    pub summary: Option<String>,
+    pub body_md: Option<String>,
+    pub status: Option<String>,
+    pub pinned: Option<bool>,
+    pub cover_image: Option<String>,
+    pub tags: Option<Vec<String>>,
+    /// `replace` (default), `append`, or `prepend`, relative to the current
+    /// body. Only meaningful when `body_md` is present.
+    pub body_mode: Option<String>,
+    /// Optimistic concurrency guard: the `updated_at` value the caller read.
+    /// The update is a single conditional statement, so a concurrent edit
+    /// cannot slip between the check and the write.
+    pub expected_updated_at: Option<String>,
+}
+
+/// Result of a partial update. `Conflict` means the conditional update matched
+/// no row because another writer changed `updated_at` first.
+#[derive(Debug)]
+pub enum PostWriteError {
+    Model(ModelError),
+    Conflict,
+}
+
+impl From<ModelError> for PostWriteError {
+    fn from(value: ModelError) -> Self {
+        Self::Model(value)
+    }
+}
+
+impl PostPatch {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.title.is_none()
+            && self.slug.is_none()
+            && self.summary.is_none()
+            && self.body_md.is_none()
+            && self.status.is_none()
+            && self.pinned.is_none()
+            && self.cover_image.is_none()
+            && self.tags.is_none()
+            && self.body_mode.is_none()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +177,28 @@ impl Model {
             .order_by_desc(Column::Id)
             .all(db)
             .await?)
+    }
+
+    /// List posts for the Agent API. `published` is the only status that is
+    /// publicly readable; `draft`, `review`, and `all` require an authenticated
+    /// key (enforced by the controller).
+    ///
+    /// # Errors
+    /// Database failure or an unknown status filter.
+    pub async fn list_for_agent(db: &DatabaseConnection, status: &str) -> ModelResult<Vec<Self>> {
+        match status.trim() {
+            "" | STATUS_PUBLISHED => Self::all_published(db).await,
+            "all" => Self::all_for_admin(db).await,
+            STATUS_DRAFT | STATUS_REVIEW => Ok(Entity::find()
+                .filter(Column::Status.eq(status.trim()))
+                .order_by_desc(Column::UpdatedAt)
+                .order_by_desc(Column::Id)
+                .all(db)
+                .await?),
+            other => Err(ModelError::msg(&format!(
+                "invalid status `{other}`; expected published, draft, review or all"
+            ))),
+        }
     }
 
     /// # Errors
@@ -361,6 +433,17 @@ impl Model {
         db: &DatabaseConnection,
         params: &PostParams,
     ) -> ModelResult<Self> {
+        self.update_post_inner(db, params, None)
+            .await?
+            .ok_or_else(|| ModelError::msg("post update matched no rows"))
+    }
+
+    async fn update_post_inner(
+        &self,
+        db: &DatabaseConnection,
+        params: &PostParams,
+        expected_updated_at: Option<DateTime<FixedOffset>>,
+    ) -> ModelResult<Option<Self>> {
         let title = params.title.trim();
         if title.is_empty() {
             return Err(ModelError::msg("title is required"));
@@ -399,10 +482,142 @@ impl Model {
         active.reading_minutes = ActiveValue::set(util::reading_minutes(&params.body_md));
         active.published_at = ActiveValue::set(published_at);
         active.updated_at = ActiveValue::set(now_tz());
-        let post = active.update(&txn).await?;
+        let mut update = Entity::update_many()
+            .set(active)
+            .filter(Column::Id.eq(self.id));
+        if let Some(expected) = expected_updated_at {
+            // SQLite stores date-times as text in more than one accepted
+            // format, and may drop sub-second precision. Compare the instant
+            // with `julianday` and, in addition, compare every mutable column
+            // with the row we loaded. That makes the write a real
+            // compare-and-swap: a concurrent edit in the same second still
+            // changes at least one of these fields and loses the race.
+            if db.get_database_backend() == DatabaseBackend::Sqlite {
+                update = update.filter(Expr::cust_with_values(
+                    "julianday(updated_at) = julianday(?)",
+                    [expected.to_rfc3339()],
+                ));
+            } else {
+                update = update.filter(Column::UpdatedAt.eq(expected));
+            }
+            update = update
+                .filter(Column::Title.eq(self.title.clone()))
+                .filter(Column::Slug.eq(self.slug.clone()))
+                .filter(Column::Summary.eq(self.summary.clone()))
+                .filter(Column::BodyMd.eq(self.body_md.clone()))
+                .filter(Column::BodyRef.eq(self.body_ref.clone()))
+                .filter(Column::CoverImage.eq(self.cover_image.clone()))
+                .filter(Column::Status.eq(self.status.clone()))
+                .filter(Column::Pinned.eq(self.pinned))
+                .filter(Column::ReadingMinutes.eq(self.reading_minutes))
+                .filter(Column::CategoryId.eq(self.category_id));
+            // Like `updated_at`, SQLite may store `published_at` in a
+            // different text form than a bound RFC3339 value.
+            if let Some(published_at) = self.published_at {
+                if db.get_database_backend() == DatabaseBackend::Sqlite {
+                    update = update.filter(Expr::cust_with_values(
+                        "julianday(published_at) = julianday(?)",
+                        [published_at.to_rfc3339()],
+                    ));
+                } else {
+                    update = update.filter(Column::PublishedAt.eq(published_at));
+                }
+            } else {
+                update = update.filter(Column::PublishedAt.is_null());
+            }
+        }
+        let result = update.exec(&txn).await?;
+        if result.rows_affected == 0 {
+            txn.rollback().await?;
+            return Ok(None);
+        }
+        let post = Entity::find_by_id(self.id)
+            .one(&txn)
+            .await?
+            .ok_or(ModelError::EntityNotFound)?;
         replace_tags(&post.id, &params.tags, &txn).await?;
         txn.commit().await?;
-        Ok(post)
+        Ok(Some(post))
+    }
+
+    /// Apply a partial update. This is the model-level equivalent of editing
+    /// one or two fields in the admin form, without forcing callers to send
+    /// the whole document back.
+    ///
+    /// When `expected_updated_at` is present the write is conditional on the
+    /// row still having that timestamp; a concurrent edit returns
+    /// [`PostWriteError::Conflict`] instead of silently overwriting it.
+    ///
+    /// # Errors
+    /// Validation errors, duplicate slug, stale `expected_updated_at`, or
+    /// database failure.
+    pub async fn patch_post(
+        &self,
+        db: &DatabaseConnection,
+        patch: &PostPatch,
+    ) -> std::result::Result<Self, PostWriteError> {
+        let tags = self.tags(db).await?;
+        let mut params = PostParams {
+            title: self.title.clone(),
+            slug: self.slug.clone(),
+            summary: self.summary.clone().unwrap_or_default(),
+            body_md: self.body_md.clone(),
+            status: self.status.clone(),
+            pinned: self.pinned.unwrap_or(false),
+            cover_image: self.cover_image.clone().unwrap_or_default(),
+            tags: tags.iter().map(|tag| tag.name.clone()).collect(),
+        };
+        if let Some(title) = &patch.title {
+            params.title.clone_from(title);
+        }
+        if let Some(slug) = &patch.slug {
+            params.slug.clone_from(slug);
+        }
+        if let Some(summary) = &patch.summary {
+            params.summary.clone_from(summary);
+        }
+        if let Some(status) = &patch.status {
+            params.status.clone_from(status);
+        }
+        if let Some(pinned) = patch.pinned {
+            params.pinned = pinned;
+        }
+        if let Some(cover_image) = &patch.cover_image {
+            params.cover_image.clone_from(cover_image);
+        }
+        if let Some(tags) = &patch.tags {
+            params.tags.clone_from(tags);
+        }
+        if let Some(body) = &patch.body_md {
+            let mode = patch.body_mode.as_deref().unwrap_or("replace").trim();
+            params.body_md = match mode {
+                "" | "replace" => body.clone(),
+                "append" => join_body(&self.body_md, body),
+                "prepend" => join_body(body, &self.body_md),
+                other => {
+                    return Err(ModelError::msg(&format!(
+                        "invalid body_mode `{other}`; expected replace, append or prepend"
+                    ))
+                    .into())
+                }
+            };
+        } else if patch.body_mode.is_some() {
+            return Err(ModelError::msg("body_mode requires body_md").into());
+        }
+        let expected = match patch
+            .expected_updated_at
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(value) => Some(DateTime::parse_from_rfc3339(value).map_err(|_| {
+                ModelError::msg("expected_updated_at must be an RFC3339 timestamp")
+            })?),
+            None => None,
+        };
+        self.update_post_inner(db, &params, expected)
+            .await?
+            .ok_or(PostWriteError::Conflict)
     }
 
     /// # Errors
@@ -518,6 +733,17 @@ fn normalize_status(status: &str) -> ModelResult<&'static str> {
         other => Err(ModelError::msg(&format!(
             "invalid status `{other}`; expected one of draft/review/published"
         ))),
+    }
+}
+
+fn join_body(first: &str, second: &str) -> String {
+    let first = first.trim_end();
+    let second = second.trim_start();
+    match (first.is_empty(), second.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => second.to_string(),
+        (false, true) => first.to_string(),
+        (false, false) => format!("{first}\n\n{second}"),
     }
 }
 

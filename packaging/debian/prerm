@@ -3,19 +3,34 @@
 # remove/deconfigure; postinst brings them back after the new binary is in place.
 set -e
 
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+stop_units() {
+  if command -v deb-systemd-invoke >/dev/null 2>&1; then
+    deb-systemd-invoke stop weft-scheduler.service weft.service weft-backup.timer >/dev/null 2>&1 || true
+  elif command -v systemctl >/dev/null 2>&1; then
+    systemctl stop weft-scheduler.service weft.service weft-backup.timer >/dev/null 2>&1 || true
+  fi
+}
+
+disable_units() {
+  if command -v deb-systemd-helper >/dev/null 2>&1; then
+    deb-systemd-helper disable weft-scheduler.service weft.service weft-backup.timer >/dev/null 2>&1 || true
+  elif command -v systemctl >/dev/null 2>&1; then
+    systemctl disable weft-scheduler.service weft.service weft-backup.timer >/dev/null 2>&1 || true
+  fi
+}
+
 case "$1" in
   remove|deconfigure|upgrade)
-    if command -v systemctl >/dev/null 2>&1; then
-      systemctl stop weft-scheduler.service weft.service weft-backup.timer >/dev/null 2>&1 || true
-    fi
+    stop_units
     ;;
 esac
 
 case "$1" in
   remove|deconfigure)
-    if command -v systemctl >/dev/null 2>&1; then
-      systemctl disable weft-scheduler.service weft.service weft-backup.timer >/dev/null 2>&1 || true
-    fi
+    disable_units
     ;;
 esac
 

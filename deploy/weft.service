@@ -9,8 +9,9 @@ Type=simple
 User=weft
 Group=weft
 WorkingDirectory=/srv/weft
+Environment=WEFT_APP_DIR=/srv/weft
 EnvironmentFile=/etc/weft/weft.env
-ExecStart=/usr/local/bin/weft-cli start
+ExecStart=/usr/local/bin/weft-cli start --server-and-worker --no-banner
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=30

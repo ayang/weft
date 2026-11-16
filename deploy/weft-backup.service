@@ -7,6 +7,7 @@ Type=oneshot
 User=weft
 Group=weft
 WorkingDirectory=/srv/weft
+Environment=WEFT_APP_DIR=/srv/weft
 EnvironmentFile=/etc/weft/weft.env
 Environment=WEFT_CLI=/usr/local/bin/weft-cli
 ExecStart=/usr/local/bin/weft-backup

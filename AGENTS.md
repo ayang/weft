@@ -42,3 +42,9 @@ cargo test
 
 - Docs: <https://loco.rs/docs/>
 - Framework agent guide: <https://loco.rs/AGENTS.md>
+- Content Agent skill: `.claude/skills/weft-content/SKILL.md` + `docs/agent-api.md`
+  (also linked at `.agents/skills/weft-content` so DeepSeek Harness discovers it).
+  The admin page `/admin/settings/api-keys` serves a self-contained
+  `weft-content-skill.zip`; its files are embedded with `include_str!` in
+  `src/controllers/agent_skill.rs`, so keep the source paths intact when moving
+  docs or the skill, and rebuild the binary after editing them.

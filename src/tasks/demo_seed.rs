@@ -84,7 +84,7 @@ let site = Weft::new("sqlite").await?;
 
 ## 边界
 
-Agent API 默认只读；生产环境应设置 `AGENT_API_TOKEN` 并按分钟限流。AI 只生成受控 JSON/文本，不执行代码。
+公开读取通常无需 token（设置旧版 `AGENT_API_TOKEN` 时读取也要带它）；草稿与写入需要在后台创建 Agent Key，请求带 `Authorization: Bearer weft_...` 并按分钟限流。AI 只生成受控 JSON/文本，不执行代码。
 "#,
                 vec!["AI".to_string(), "Agent".to_string()],
             ),

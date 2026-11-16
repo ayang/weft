@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block body_class %}admin-body{% endblock %}
+{% block page_class %}page-admin{% endblock %}
+{% block title %}Agent API · {{ site.title }}{% endblock %}
+{% block content %}
+{% include "partials/admin_nav.html" %}
+<section class="admin-head">
+  <div>
+    <p class="eyebrow">ADMIN / AGENT ACCESS</p>
+    <h1>Agent API</h1>
+    <p class="muted">给 Codex、Claude 等外部 Agent 一套可审计的写入凭据。Key 只在创建时显示一次，数据库只保存 SHA-256 哈希。</p>
+  </div>
+  <div class="admin-actions">
+    <a class="button ghost" href="/admin">返回后台</a>
+  </div>
+</section>
+
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+{% if new_key %}
+<div class="alert success">
+  <strong>新 Key 已创建，只显示这一次：</strong>
+  <p><code>{{ new_key }}</code></p>
+  <p class="small">把它保存到 Agent 的 <code>WEFT_API_KEY</code> 环境变量。刷新页面后无法再次查看；如果丢失，请撤销后重建。</p>
+</div>
+{% endif %}
+
+<div class="settings-layout">
+  <section class="builder-card settings-info">
+    <div class="builder-card-head">
+      <div><p class="eyebrow">CREDENTIALS</p><h2>已创建的 Key</h2></div>
+      <span class="status status-active">{{ keys | length }} 个</span>
+    </div>
+    <div class="table-wrap">
+      <table class="admin-table">
+        <thead><tr><th>名称</th><th>前缀</th><th>权限</th><th>创建</th><th>最近使用</th><th>状态</th><th></th></tr></thead>
+        <tbody>
+          {% for key in keys %}
+          <tr>
+            <td>{{ key.name }}</td>
+            <td><code>{{ key.prefix }}</code></td>
+            <td><code>{{ key.scopes }}</code></td>
+            <td class="muted">{{ key.created_at }}</td>
+            <td class="muted">{{ key.last_used_at }}</td>
+            <td>
+              {% if key.active %}<span class="status status-active">active</span>
+              {% else %}<span class="status status-paused" title="{{ key.revoked_at }}">revoked</span>{% endif %}
+            </td>
+            <td class="row-actions">
+              {% if key.active %}
+              <form method="post" action="/admin/settings/api-keys/{{ key.id }}/revoke" data-confirm="撤销后使用该 Key 的 Agent 会立即失去访问权限，确定吗？">
+                <button class="link-button danger" type="submit">撤销</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="muted">还没有 Agent Key。用右侧表单创建第一个。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="security-note">
+      <h3>快速使用</h3>
+      <pre><code>export WEFT_BASE_URL="{{ agent_api_base }}"
+export WEFT_API_KEY="weft_..."
+
+curl -sS "$WEFT_BASE_URL/posts?status=draft" \
+  -H "Authorization: Bearer $WEFT_API_KEY"</code></pre>
+      <p class="small muted">完整端点、字段与工作流见下方可下载的 Skill 包，或仓库里的 <code>.claude/skills/weft-content/SKILL.md</code> 和 <code>docs/agent-api.md</code>。</p>
+    </div>
+  </section>
+
+  <form method="post" action="/admin/settings/api-keys" class="builder-card settings-form">
+    <div class="builder-card-head">
+      <div><p class="eyebrow">NEW KEY</p><h2>创建 Agent Key</h2></div>
+    </div>
+
+    <label for="key-name">名称</label>
+    <input id="key-name" name="name" placeholder="例如 codex-文章助手" required maxlength="120">
+    <p class="muted small">用于区分不同 Agent 或用途，会出现在后台列表里。</p>
+
+    <fieldset class="settings-inline">
+      <legend>权限</legend>
+      <label class="checkbox"><input type="checkbox" name="read" value="on" checked> <strong>read</strong>：读取草稿、文章、图表、媒体</label>
+      <label class="checkbox"><input type="checkbox" name="write" value="on"> <strong>write</strong>：创建/修改/发布/删除文章，上传媒体，创建/修改图表</label>
+    </fieldset>
+    <p class="muted small">write 自动包含 read。建议给能自主发布的 Agent 单独发 Key，方便随时撤销。环境变量 <code>AGENT_API_TOKEN</code> 仍然有效，但仅限已发布内容的只读访问。</p>
+
+    <div class="settings-actions">
+      <button class="button" type="submit">生成 Key</button>
+    </div>
+  </form>
+
+  <aside class="builder-card settings-info">
+    <h2>接入信息</h2>
+    <dl class="settings-dl">
+      <div><dt>Base URL</dt><dd><code>{{ agent_api_base }}</code></dd></div>
+      <div><dt>认证头</dt><dd><code>Authorization: Bearer &lt;key&gt;</code></dd></div>
+      <div><dt>限流</dt><dd>{{ rate_limit }} 次/分钟/Key（匿名公开读取不限）</dd></div>
+      <div><dt>旧配置 Token</dt><dd>{% if legacy_token %}已启用（只读）{% else %}未设置{% endif %}</dd></div>
+    </dl>
+
+    <div class="security-note">
+      <h3>下载 Skill 包</h3>
+      <p class="small muted">打包 <code>SKILL.md</code>、<code>README.md</code>、<code>references/agent-api.md</code>、<code>references/agent-openapi.yaml</code>、<code>env.example</code> 和 <code>bundle.json</code>。解压到 Claude / Codex / DeepSeek Harness 的 skill 目录即可，不依赖本仓库代码。</p>
+      <p><a class="button" href="/admin/settings/api-keys/skill.zip">下载 weft-content-skill.zip</a></p>
+      <p class="small muted"><code>env.example</code> 已填入本站 API URL；打开后补上 <code>WEFT_API_KEY</code>。</p>
+    </div>
+
+    <div class="security-note">
+      <h3>安全说明</h3>
+      <ul class="small muted">
+        <li>Key 只以 SHA-256 哈希形式存库；页面和日志都不会回显完整 Key。</li>
+        <li>撤销立即生效。删除文章、发布文章也会写入审计日志。</li>
+        <li>外部 Agent 应通过 <code>WEFT_API_KEY</code> 环境变量读取，不要写进仓库或提示词。</li>
+        <li>写接口使用 <code>expected_updated_at</code> 做乐观锁，避免覆盖人工编辑。</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/admin.js" defer></script>{% endblock %}

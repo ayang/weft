@@ -423,6 +423,7 @@ pub fn params_from_visual(
             json!({
                 "query": query,
                 "limit": sql_limit.unwrap_or(500).clamp(1, 2_000),
+                "columns": blueprint.columns.clone(),
                 "blueprint": meta,
             })
         }
@@ -434,6 +435,7 @@ pub fn params_from_visual(
             json!({
                 "url": url,
                 "data_path": http_data_path.trim(),
+                "columns": blueprint.columns.clone(),
                 "blueprint": meta,
             })
         }

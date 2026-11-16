@@ -1,6 +1,7 @@
 mod admin;
 mod admin_content;
 mod agent;
+mod agent_write;
 mod ai_edit;
 mod categories;
 mod charts;

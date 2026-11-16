@@ -35,15 +35,26 @@
 - 返回后进入并排/统一 diff，点击“应用修改”才写回编辑器，再手动保存
 - 不引入版本历史表；不提供无上下文的“一键生成摘要/卡片/Mermaid/SQL/代码”按钮
 
-## Agent API（只读）
+## Agent API（只读 + 写入）
 
-| 端点 | 说明 |
-|---|---|
-| `GET /api/agent/posts?since=RFC3339&limit=50` | 已发布文章清单，支持 ETag / Last-Modified |
-| `GET /api/agent/posts/:slug` | 元数据 + Markdown + 图表引用 |
-| `GET /api/agent/charts/:id` | 图表 spec + 最新数据 + ETag |
+公开读取通常不需要 token（若设置旧版 `AGENT_API_TOKEN` 则只读请求也要带它）；草稿与所有写操作需要后台 `/admin/settings/api-keys` 创建或 `cargo loco task agent:key-create` 生成的 Agent Key。Key 只以 SHA-256 哈希存库，可撤销、按 Key 限流；旧的 `AGENT_API_TOKEN` 只保留公开只读兼容（不能读草稿/媒体）。
 
-设置 `AGENT_API_TOKEN` 后，所有 Agent 请求需要 `Authorization: Bearer <token>`，并按分钟限流；不提供任何公开模型调用端点。
+| 方法 | 端点 | 说明 |
+|---|---|---|
+| GET | `/api/agent/me` | 验证 Key 与 read/write scopes |
+| GET | `/api/agent/posts?status=&since=&limit=` | 已发布清单；`draft`/`review`/`all` 需 Key |
+| GET | `/api/agent/posts/:slug` | 元数据 + `body_md` + Markdown + 图表引用；带 Key 可读草稿 |
+| POST | `/api/agent/posts` | 新建文章，默认草稿 |
+| PATCH | `/api/agent/posts/:slug` | 局部修改；`body_mode` 支持 replace/append/prepend，`expected_updated_at` 乐观锁 |
+| DELETE | `/api/agent/posts/:slug` | 删除文章及其图表 |
+| GET/POST | `/api/agent/posts/:slug/charts` | 列出/新建图表 |
+| GET | `/api/agent/charts/:id` | 图表 spec + 最新数据 + ETag |
+| PATCH/DELETE | `/api/agent/charts/:id` | 局部修改/删除图表 |
+| POST | `/api/agent/charts/:id/refresh` | 立即拉取数据 |
+| GET | `/api/agent/media?q=&kind=` | 媒体库搜索 |
+| POST | `/api/agent/media` | multipart 上传图片/视频 |
+
+图表支持 Blueprint 模式（`data` + `kind` + `x_field`/`y_fields`，服务端生成受控 ECharts spec）和高级模式（`render_config` + `data_source_config`）；SQL 只读白名单、HTTP 域名白名单仍然生效。写操作记录审计日志，不打印 Key。后台 `/admin/settings/api-keys` 可下载自包含的 `weft-content-skill.zip`（SKILL.md + references + README + env.example），供本项目代码之外使用。完整契约见 [agent-api.md](agent-api.md) 与 [agent-openapi.yaml](agent-openapi.yaml)。
 
 ## 图表
 
@@ -149,6 +160,7 @@ SITE_THEME=mytheme ./scripts/start-dev.sh
 - `ai_settings`：管理端保存的运行时提供商、Base URL、模型、Key 与启用状态（Key 不回显）
 - `site_settings`：站点名称、品牌、副标题、描述、作者、首页 Banner、URL、每页文章数
 - `media`：本地上传图片/视频的元数据；文件位于 `MEDIA_DIR`
+- `agent_api_keys`：Agent Key 名称、前缀、SHA-256 哈希、scopes、最近使用、撤销时间
 - `categories`：AI 生成的分类；`posts.category_id` 关联文章
 - `chart_specs`：意图、kind、数据源配置、render_config、cron、最后成功/失败、退避
 - `chart_data_caches`：payload、ETag、获取时间、过期时间（chart_id 唯一）
@@ -168,7 +180,7 @@ SITE_THEME=mytheme ./scripts/start-dev.sh
 
 - 不挂载公开注册路由；管理端只接受 `ADMIN_EMAIL` 对应账号
 - 管理 cookie：`HttpOnly`、`SameSite=Strict`、生产加 `Secure`；登录有每分钟限流
-- Agent API 只读、可选 Bearer token，并按分钟限流
+- Agent API 公开只读；草稿与写入需要可撤销的 Agent Key，按 Key 每分钟限流
 - 所有外部 HTTP 数据源必须显式域名白名单，禁止私有地址与 URL 凭据
 - AI Key 可保存在 SQLite（`ai_settings`）；数据库文件应限制权限并纳入备份/加密策略
 - AI 文章修改不会自动落库：必须看 diff、点击“应用修改”，再保存

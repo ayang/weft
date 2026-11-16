@@ -457,7 +457,7 @@ h3 { font-size: 1.15rem; }
 .post-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .post-list .post-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .post-card-cover { display: block; min-height: 170px; background: var(--paper); overflow: hidden; }
-.post-card-cover img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .25s ease; }
+.post-card-cover img { width: 100%; height: 100%; object-fit: cover; object-position: left; display: block; transition: transform .25s ease; }
 .post-card:hover .post-card-cover img { transform: scale(1.025); }
 .post-card-main { max-width: none; padding: 1rem 1.05rem; }
 .post-card h3 { font-size: 1.2rem; margin-bottom: .25rem; }

@@ -81,26 +81,23 @@ async fn render_llms(ctx: &AppContext, full: bool) -> Result<String> {
         }
     }
     out.push_str("\n## Agent API\n\n");
-    out.push_str("只读、结构化、支持 ETag：\n\n");
+    out.push_str("公开读取通常无需 token；若部署时设置旧版 `AGENT_API_TOKEN`，读取也要带它（只读）。内容结构化并支持 ETag：\n\n");
+    out.push_str(&format!(
+        "- `GET {base}/api/agent/me` — 验证 Key 与 scopes\n"
+    ));
     out.push_str(&format!(
         "- `GET {base}/api/agent/posts?since=RFC3339&limit=50` — 已发布文章清单\n"
     ));
     out.push_str(&format!(
-        "- `GET {base}/api/agent/posts/:slug` — 文章元数据、Markdown、卡片、图表引用\n"
+        "- `GET {base}/api/agent/posts/:slug` — 文章元数据、Markdown、图表引用\n"
     ));
     out.push_str(&format!(
         "- `GET {base}/api/agent/charts/:id` — 图表 spec + 最新数据 + ETag\n"
     ));
     out.push('\n');
-    if settings.agents.token.trim().is_empty() {
-        out.push_str(
-            "当前 Agent API 无需 token；生产环境建议设置 `AGENT_API_TOKEN` 并启用限流。\n\n",
-        );
-    } else {
-        out.push_str(
-            "Agent API 需要 `Authorization: Bearer <AGENT_API_TOKEN>`，并按分钟限流。\n\n",
-        );
-    }
+    out.push_str(
+        "管理草稿与写入需要后台 `/admin/settings/api-keys` 创建的 Agent Key：`Authorization: Bearer weft_...`。写接口包括 `POST/PATCH/DELETE /api/agent/posts`、`POST /api/agent/media`、`POST/PATCH/DELETE /api/agent/posts/:slug/charts`；按 Key 每分钟限流。旧的 `AGENT_API_TOKEN` 仅保留公开只读兼容（不能读草稿/媒体）。\n\n",
+    );
     out.push_str("## 更新策略\n\n");
     out.push_str("文章发布/更新后立即可见；语义索引由后台任务异步更新。\n");
     out.push_str("带 `refresh_cron` 的图表由 Loco Scheduler 周期刷新，失败按指数退避重试；图表响应包含 `updated_at` 与 ETag，可条件请求。\n");

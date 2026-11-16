@@ -14,11 +14,16 @@ pub struct AgentTag {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentPostSummary {
+    pub id: i64,
     pub slug: String,
     pub title: String,
     pub summary: String,
+    pub status: String,
+    pub pinned: bool,
+    pub cover_image: String,
     pub url: String,
     pub markdown_url: String,
+    pub admin_edit_url: String,
     pub published_at: String,
     pub updated_at: String,
     pub reading_minutes: i64,
@@ -30,11 +35,16 @@ impl AgentPostSummary {
     pub fn from_model(post: &posts::Model, tags: &[tags::Model], base_url: &str) -> Self {
         let slug = post.slug.clone();
         Self {
+            id: post.id,
             slug: slug.clone(),
             title: post.title.clone(),
             summary: post.summary.clone().unwrap_or_default(),
+            status: post.status.clone(),
+            pinned: post.pinned.unwrap_or(false),
+            cover_image: post.cover_image.clone().unwrap_or_default(),
             url: format!("{base_url}/posts/{slug}"),
             markdown_url: format!("{base_url}/posts/{slug}.md"),
+            admin_edit_url: format!("{base_url}/admin/posts/{}/edit", post.id),
             published_at: post
                 .published_at
                 .map(|dt| dt.to_rfc3339())
@@ -57,6 +67,8 @@ pub struct AgentChartRef {
     pub chart_id: i64,
     pub title: String,
     pub kind: String,
+    pub status: String,
+    pub marker: String,
     pub data_url: String,
 }
 
@@ -66,6 +78,8 @@ impl From<(&chart_specs::Model, &str)> for AgentChartRef {
             chart_id: chart.id,
             title: chart.title.clone(),
             kind: chart.kind.clone(),
+            status: chart.status.clone(),
+            marker: format!("[[chart:{}]]", chart.id),
             data_url: format!("{base_url}/api/agent/charts/{}", chart.id),
         }
     }
@@ -74,6 +88,7 @@ impl From<(&chart_specs::Model, &str)> for AgentChartRef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentPostDetail {
     pub post: AgentPostSummary,
+    pub body_md: String,
     pub markdown: String,
     pub charts: Vec<AgentChartRef>,
 }
@@ -89,13 +104,38 @@ pub struct AgentListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentChartResponse {
     pub chart_id: i64,
+    pub post_id: i64,
     pub title: String,
     pub kind: String,
+    pub source_type: String,
+    pub status: String,
+    pub marker: String,
     pub spec: Value,
+    pub data_source: Value,
     pub data: Value,
     pub updated_at: String,
     pub etag: String,
     pub stale: bool,
+}
+
+/// Write-side chart representation. It carries the fields an editor needs to
+/// rebuild the chart and to splice it into Markdown.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentChartDetail {
+    pub chart_id: i64,
+    pub post_id: i64,
+    pub title: String,
+    pub kind: String,
+    pub source_type: String,
+    pub status: String,
+    pub refresh_cron: String,
+    pub spec: Value,
+    pub data_source: Value,
+    pub data: Value,
+    pub stale: bool,
+    pub marker: String,
+    pub data_url: String,
+    pub updated_at: String,
 }
 
 #[must_use]

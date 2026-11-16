@@ -62,6 +62,20 @@ impl Model {
             .await?)
     }
 
+    /// All charts for one post, including paused ones. Public rendering uses
+    /// [`Self::for_post`], which hides paused charts; editors need the full
+    /// list so they can unpause or delete them.
+    ///
+    /// # Errors
+    /// Database failure.
+    pub async fn all_for_post(db: &DatabaseConnection, post_id: i64) -> ModelResult<Vec<Self>> {
+        Ok(Entity::find()
+            .filter(Column::PostId.eq(post_id))
+            .order_by_asc(Column::Id)
+            .all(db)
+            .await?)
+    }
+
     /// # Errors
     /// Database failure.
     pub async fn all_for_admin(db: &DatabaseConnection) -> ModelResult<Vec<Self>> {
@@ -168,7 +182,13 @@ impl Model {
     pub async fn record_success(&self, db: &DatabaseConnection) -> ModelResult<Self> {
         let mut active: ActiveModel = self.clone().into();
         let now = now_tz();
-        active.status = ActiveValue::set(STATUS_ACTIVE.to_string());
+        // A manual refresh of a paused chart should update its data without
+        // silently unpublishing it.
+        active.status = ActiveValue::set(if self.status == STATUS_PAUSED {
+            STATUS_PAUSED.to_string()
+        } else {
+            STATUS_ACTIVE.to_string()
+        });
         active.last_run_at = ActiveValue::set(Some(now));
         active.last_success_at = ActiveValue::set(Some(now));
         active.failure_count = ActiveValue::set(0);

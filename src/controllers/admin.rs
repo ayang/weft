@@ -13,8 +13,8 @@ use crate::{
     data::settings::Settings,
     materials, media,
     models::{
-        ai_sessions, ai_settings, categories, chart_data_caches, chart_recipes, chart_specs,
-        medias, posts, site_settings,
+        agent_api_keys, ai_sessions, ai_settings, categories, chart_data_caches, chart_recipes,
+        chart_specs, medias, posts, site_settings,
     },
     security::{clear_admin_cookie, issue_admin_cookie, AdminSession, Limits},
     util, web,
@@ -128,6 +128,15 @@ pub struct AiSettingsForm {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SavedQuery {
     pub saved: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct AgentKeyForm {
+    pub name: String,
+    #[serde(default)]
+    pub read: Option<String>,
+    #[serde(default)]
+    pub write: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2187,6 +2196,105 @@ async fn enqueue_publish(ctx: &AppContext, post_id: i64) {
     }
 }
 
+#[debug_handler]
+async fn api_keys_page(
+    State(ctx): State<AppContext>,
+    ViewEngine(v): ViewEngine<TeraView>,
+    _admin: AdminSession,
+) -> Result<Response> {
+    render_api_keys(&ctx, &v, None, None).await
+}
+
+#[debug_handler]
+async fn create_api_key(
+    State(ctx): State<AppContext>,
+    ViewEngine(v): ViewEngine<TeraView>,
+    _admin: AdminSession,
+    Form(form): Form<AgentKeyForm>,
+) -> Result<Response> {
+    if form.name.trim().is_empty() {
+        return render_api_keys(&ctx, &v, None, Some("请填写 Key 名称")).await;
+    }
+    let scopes = if form.write.is_some() {
+        agent_api_keys::Scopes::read_write()
+    } else if form.read.is_some() {
+        agent_api_keys::Scopes::read_only()
+    } else {
+        return render_api_keys(&ctx, &v, None, Some("至少选择 read 或 write 权限")).await;
+    };
+    match agent_api_keys::Model::create_key(&ctx.db, form.name.trim(), scopes).await {
+        Ok((key, plaintext)) => {
+            tracing::warn!(
+                key_id = key.id,
+                name = key.name,
+                scopes = key.scopes,
+                "agent API key created"
+            );
+            render_api_keys(&ctx, &v, Some(&plaintext), None).await
+        }
+        Err(error) => render_api_keys(&ctx, &v, None, Some(&error.to_string())).await,
+    }
+}
+
+#[debug_handler]
+async fn revoke_api_key(
+    State(ctx): State<AppContext>,
+    _admin: AdminSession,
+    Path(id): Path<i64>,
+) -> Result<Response> {
+    let key = agent_api_keys::Model::find_by_id(&ctx.db, id).await?;
+    key.revoke(&ctx.db).await?;
+    tracing::warn!(key_id = key.id, name = key.name, "agent API key revoked");
+    redirect_to("/admin/settings/api-keys")
+}
+
+async fn render_api_keys(
+    ctx: &AppContext,
+    v: &TeraView,
+    new_key: Option<&str>,
+    error: Option<&str>,
+) -> Result<Response> {
+    let settings = Settings::from_context(ctx)?;
+    let rows = agent_api_keys::Model::all_for_admin(&ctx.db).await?;
+    let keys = rows
+        .iter()
+        .map(|key| {
+            json!({
+                "id": key.id,
+                "name": key.name,
+                "prefix": format!("weft_{}_…", key.prefix),
+                "scopes": key.scopes,
+                "created_at": key.created_at.format("%Y-%m-%d %H:%M").to_string(),
+                "last_used_at": key
+                    .last_used_at
+                    .map(|value| value.format("%Y-%m-%d %H:%M").to_string())
+                    .unwrap_or_else(|| "从未使用".to_string()),
+                "revoked_at": key
+                    .revoked_at
+                    .map(|value| value.format("%Y-%m-%d %H:%M").to_string())
+                    .unwrap_or_default(),
+                "active": key.revoked_at.is_none(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let data = data!({
+        "site": site_json(&settings),
+        "keys": keys,
+        "new_key": new_key.unwrap_or_default(),
+        "error": error.unwrap_or_default(),
+        "legacy_token": !settings.agents.token.trim().is_empty(),
+        "rate_limit": settings.agents.rate_limit_per_min,
+        "agent_api_base": format!("{}/api/agent", settings.site.base_url.trim_end_matches('/')),
+    });
+    let mut response = format::render();
+    if error.is_some() {
+        response = response.status(StatusCode::BAD_REQUEST);
+    }
+    response
+        .header("cache-control", "no-store")
+        .view(v, "admin/api_keys.html", data)
+}
+
 fn site_json(settings: &Settings) -> serde_json::Value {
     let title = &settings.site.title;
     let brand = if settings.site.brand.trim().is_empty() {
@@ -2251,4 +2359,9 @@ pub fn routes() -> Routes {
             get(site_settings_page).post(save_site_settings),
         )
         .add("/settings/ai", get(ai_settings_page).post(save_ai_settings))
+        .add(
+            "/settings/api-keys",
+            get(api_keys_page).post(create_api_key),
+        )
+        .add("/settings/api-keys/{id}/revoke", post(revoke_api_key))
 }

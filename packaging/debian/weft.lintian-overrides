@@ -1,0 +1,11 @@
+# serde_yaml vendors libyaml through the `unsafe-libyaml` crate, so the library
+# is statically linked into weft-cli rather than duplicated from the system.
+weft: embedded-library libyaml [usr/bin/weft-cli]
+
+# The units are systemd-only (Depends: systemd). deb-systemd-invoke/helper are
+# used for start/stop/enable so policy-rc.d is honoured; the remaining direct
+# systemctl calls are daemon-reload and diagnostics.
+weft: maintainer-script-calls-systemctl
+
+# Intentional repair of state ownership when the service account was recreated.
+weft: recursive-privilege-change

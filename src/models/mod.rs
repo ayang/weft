@@ -1,4 +1,5 @@
 pub mod _entities;
+pub mod agent_api_keys;
 pub mod ai_sessions;
 pub mod ai_settings;
 pub mod categories;

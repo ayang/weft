@@ -21,7 +21,7 @@ async fn chart_data(State(ctx): State<AppContext>, Path(id): Path<i64>) -> Resul
         return not_found();
     }
     let cache = charts::cached(&ctx.db, chart.id).await?;
-    let (data, etag, updated_at, stale, last_modified) = if let Some(cache) = &cache {
+    let (data, cache_etag, updated_at, stale, last_modified) = if let Some(cache) = &cache {
         (
             cache.payload.clone(),
             cache.etag.clone(),
@@ -30,15 +30,23 @@ async fn chart_data(State(ctx): State<AppContext>, Path(id): Path<i64>) -> Resul
             cache.fetched_at,
         )
     } else {
-        let etag = util::etag_for_str(&format!("{}:{}", chart.id, chart.render_config));
         (
             serde_json::Value::Null,
-            etag,
+            String::new(),
             String::new(),
             true,
             chart.updated_at,
         )
     };
+    // Include the chart row version: a spec-only update must not leave a 304
+    // pointing at the previous render_config.
+    let etag = util::etag_for_str(&format!(
+        "chart:{}:{}:{}",
+        chart.id,
+        chart.updated_at.to_rfc3339(),
+        cache_etag
+    ));
+    let last_modified = last_modified.max(chart.updated_at);
     if stale {
         enqueue_refresh(&ctx, &settings, chart.id).await;
     }

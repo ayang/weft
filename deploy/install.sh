@@ -92,17 +92,17 @@ cat <<EOF
 
 1. 编辑 $CONF_DIR/weft.env 并填写密钥：
      JWT_SECRET=\$(openssl rand -base64 48)
-     ADMIN_EMAIL=you@example.com
+     ADMIN_EMAIL=admin@example.com
      SITE_BASE_URL=https://your.domain
 
 2. 初始化数据库（生成 /var/lib/weft/weft.sqlite）：
-     sudo -u weft bash -c 'cd $APP_DIR && set -a && . $CONF_DIR/weft.env && set +a && weft-cli db migrate'
+     sudo -u weft bash -c 'cd $APP_DIR && set -a && . $CONF_DIR/weft.env && WEFT_APP_DIR=$APP_DIR && set +a && weft-cli db migrate'
 
 3. 创建管理员（邮箱必须与 ADMIN_EMAIL 一致）：
-     sudo -u weft bash -c 'cd $APP_DIR && set -a && . $CONF_DIR/weft.env && set +a && weft-cli task admin:create email:you@example.com name:"Admin" password:"change-me-12345"'
+     sudo -u weft bash -c 'cd $APP_DIR && set -a && . $CONF_DIR/weft.env && WEFT_APP_DIR=$APP_DIR && set +a && weft-cli task admin:create email:admin@example.com name:"Admin" password:"change-me-12345"'
 
 4. 启用服务：
-     systemctl enable --now weft.service weft-scheduler.service weft-backup.time
+     systemctl enable --now weft.service weft-scheduler.service weft-backup.timer
 
 5. 配置 nginx 反向代理，参考 deploy/nginx.conf.example。
 

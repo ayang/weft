@@ -9,7 +9,7 @@
 | [`deploy/weft.service`](deploy/weft.service) | Web 服务 unit |
 | [`deploy/weft-scheduler.service`](deploy/weft-scheduler.service) | 定时任务 unit（图表刷新、索引补偿、缓存清理） |
 | [`deploy/weft-backup.service`](deploy/weft-backup.service) / [`deploy/weft-backup.timer`](deploy/weft-backup.timer) | 每日数据库 + 媒体备份 |
-| [`deploy/weft-backup.sh`](deploy/weft-backup.sh) | 备份脚本（安装到 `/usr/local/bin/weft-backup`） |
+| [`deploy/weft-backup.sh`](deploy/weft-backup.sh) | 备份脚本（源码安装到 `/usr/local/bin/weft-backup`，deb 到 `/usr/lib/weft/weft-backup`） |
 | [`deploy/weft.env.example`](deploy/weft.env.example) | 环境变量模板 |
 | [`deploy/nginx.conf.example`](deploy/nginx.conf.example) | 反向代理与 TLS 配置 |
 | [`deploy/install.sh`](deploy/install.sh) | 一键安装（放文件、建用户、装 unit，生成随机密钥，不自动启动） |
@@ -29,10 +29,10 @@
 | `/var/lib/weft/` | `weft.sqlite`（+ WAL/SHM）、`media/uploads/` | weft |
 | `/var/backups/weft/` | 数据库备份、媒体归档 | weft |
 
-进程以系统用户 `weft` 运行，工作目录是 `/srv/weft`。**配置不在工作目录里**：通过 `LOCO_CONFIG_FOLDER=/etc/weft` 指定；主题与 i18n 资源必须留在工作目录，因为模板、静态文件和翻译包都按相对路径加载。
+进程以系统用户 `weft` 运行，工作目录是 `/srv/weft`。**配置不在工作目录里**：通过 `LOCO_CONFIG_FOLDER=/etc/weft` 指定；主题与 i18n 资源必须留在应用目录（`WEFT_APP_DIR`，源码安装为 `/srv/weft`，deb 为 `/usr/share/weft`），模板、静态文件和翻译包都从这里加载。
 
 ```text
-浏览器 ──TLS──▶ nginx ──127.0.0.1:5150──▶ weft-cli start
+浏览器 ──TLS──▶ nginx ──127.0.0.1:5150──▶ weft-cli start --server-and-worker
                                             │
                                             ├── /var/lib/weft/weft.sqlite (WAL)
                                             ├── /var/lib/weft/media/uploads
@@ -75,7 +75,7 @@ sudo bash ./deploy/install.sh
 2. 建立 `/srv/weft`、`/var/lib/weft`、`/var/lib/weft/media/uploads`、`/var/backups/weft`、`/etc/weft`；
 3. 把 `themes/`、`assets/` 同步到 `/srv/weft`；
 4. 安装 `weft-cli` 与 `weft-backup`；
-5. 首次运行时生成 `/etc/weft/production.yaml`、`scheduler.yaml`、`weft.env`（已存在则保留，`weft.env` 内含随机 `JWT_SECRET` / `AGENT_API_TOKEN`）；
+5. 首次运行时生成 `/etc/weft/production.yaml`、`scheduler.yaml`、`weft.env`（已存在则保留，`weft.env` 内含随机 `JWT_SECRET` / `AGENT_API_TOKEN`；后者仅作旧版公开只读兼容）；
 6. 安装 systemd unit 并 `daemon-reload`。
 
 然后按第 5、6 节填配置、初始化数据库，再启动服务。
@@ -91,29 +91,59 @@ bash packaging/build-deb.sh              # 产物：dist/weft_<version>_<arch>.d
 sudo apt install ./dist/weft_<version>_<arch>.deb
 ```
 
-`bash packaging/build-deb.sh --install` 可在构建后直接安装。脚本不需要网络，也不依赖 `cargo-deb`，只用 `dpkg-deb`。
+`bash packaging/build-deb.sh --install` 可在构建后直接安装（需要 root）。脚本不需要网络，也不依赖 `cargo-deb`，只用 `dpkg-deb`；它会在打包副本上执行 `strip`，所以二进制明显小于 `target/release/weft-cli`。
+
+脚本会从二进制读取最高的 `GLIBC_*` 符号版本，并据此生成 `Depends: libc6 (>= ...)`。因此在 Ubuntu 26.04 上构建的包不能装到 glibc 更旧的 Debian/Ubuntu 上；要给旧发行版打包，请在目标发行版或更旧的容器里构建，例如：
+
+```bash
+docker run --rm -v "$PWD:/src" -w /src -v "$PWD/dist:/out" \
+  -e CARGO_TARGET_DIR=/tmp/target rust:1-bookworm \
+  bash -c 'cargo build --release --bin weft-cli && cp /tmp/target/release/weft-cli /out/weft-cli'
+BIN=dist/weft-cli bash packaging/build-deb.sh
+```
 
 包安装后的路径由 dpkg 管理，与源码安装略不同：
 
 | 路径 | 内容 |
 |---|---|
-| `/usr/bin/weft-cli` | 二进制 |
+| `/usr/bin/weft-cli` | 二进制（打包时已 strip） |
+| `/usr/lib/systemd/system/` | `weft*.service` / `weft-backup.timer` |
 | `/usr/share/weft/` | `themes/`、`assets/`、`weft.env.example`（升级时覆盖） |
 | `/etc/weft/` | `production.yaml`、`scheduler.yaml`（conffile）、首次安装生成的 `weft.env` |
 | `/var/lib/weft/` | 数据库与上传文件 |
-| `/usr/share/doc/weft/` | README、部署与功能文档 |
+| `/var/backups/weft/` | 每日备份 |
+| `/usr/share/doc/weft/` | README、部署/功能文档、nginx 示例、man page |
 
-`postinst` 会自动完成：创建 `weft` 系统用户与目录；生成随机 `JWT_SECRET` 与 `AGENT_API_TOKEN`；执行 `weft-cli db migrate`；启用并启动 `weft.service`、`weft-scheduler.service`、`weft-backup.timer`。
+`postinst` 会自动完成：创建 `weft` 系统用户与目录；生成随机 `JWT_SECRET` 与 `AGENT_API_TOKEN`（旧版公开只读兼容）；执行 `weft-cli db migrate`；启用并**立即启动** `weft.service`、`weft-scheduler.service`、`weft-backup.timer`。也就是说，安装完成后 Web 服务已经在 `127.0.0.1:5150` 监听，接下来只需要在 nginx 里把域名反代到这个地址。
 
-安装后仍需设置 `ADMIN_EMAIL` / `SITE_BASE_URL` 并创建管理员：
+验证：
+
+```bash
+systemctl status weft.service weft-scheduler.service
+curl -I http://127.0.0.1:5150/
+journalctl -u weft.service -n 50
+```
+
+`/etc/weft/weft.env` 里的 `ADMIN_EMAIL` 与 `SITE_BASE_URL` 首次是占位值；把 `ADMIN_EMAIL` 改成你的邮箱（并重启服务）后创建管理员：
 
 ```bash
 sudoedit /etc/weft/weft.env
 sudo systemctl restart weft.service weft-scheduler.service
-sudo -u weft sh -c 'cd /usr/share/weft && set -a && . /etc/weft/weft.env && set +a && weft-cli task admin:create email:you@example.com name:"Admin" password:"change-me-12345"'
+sudo -u weft sh -c 'cd /usr/share/weft && set -a && . /etc/weft/weft.env && WEFT_APP_DIR=/usr/share/weft && set +a && weft-cli task admin:create email:admin@example.com name:"Admin" password:"change-me-12345"'
 ```
 
-升级时重新构建并 `sudo apt install ./dist/weft_*.deb`：`postinst` 会再次迁移并启动服务；迁移失败时不会启动，避免新二进制跑在旧表结构上。`apt remove weft` 保留数据；`apt purge weft` 删除配置和系统用户，但**仍然保留** `/var/lib/weft` 与 `/var/backups/weft`。
+> `admin:create` 的 `email` 必须与 `ADMIN_EMAIL` 完全一致，否则登录会被 403 拒绝。
+
+升级时重新构建并 `sudo apt install ./dist/weft_*.deb`：`prerm` 会先停服务，`postinst` 会再次迁移并启动；迁移失败时不会启动，避免新二进制跑在旧表结构上。`apt remove weft` 只停服务、保留数据；`apt purge weft` 删除配置和 `/etc/weft/weft.env`，但**保留**系统用户 `weft`、`/var/lib/weft` 与 `/var/backups/weft`，因此重装后数据仍可继续使用。要彻底删除数据需手动执行：
+
+```bash
+sudo deluser --system weft
+sudo rm -rf /var/lib/weft /var/backups/weft
+```
+
+### 从源码安装（不使用 .deb）
+
+如果目标系统不是 Debian/Ubuntu，或者你想自己控制文件位置，继续看下一节。
 
 ## 4. 手动安装文件
 
@@ -121,7 +151,9 @@ sudo -u weft sh -c 'cd /usr/share/weft && set -a && . /etc/weft/weft.env && set 
 sudo useradd --system --home-dir /srv/weft --shell /usr/sbin/nologin --user-group weft || true
 
 sudo install -d -m 0755 /srv/weft
-sudo install -d -m 0750 -o weft -g weft /var/lib/weft /var/lib/weft/media/uploads /var/backups/weft
+sudo install -d -m 0750 -o weft -g weft /var/lib/weft
+sudo install -d -m 0755 -o weft -g weft /var/lib/weft/media
+sudo install -d -m 0750 -o weft -g weft /var/lib/weft/media/uploads /var/backups/weft
 sudo install -d -m 0750 -o root -g weft /etc/weft
 
 # 主题与 i18n（必须与工作目录同级）
@@ -152,6 +184,8 @@ systemd 通过 `EnvironmentFile=` 读取。`weft.env.example` 里的每一项都
 ```bash
 LOCO_ENV=production
 LOCO_CONFIG_FOLDER=/etc/weft
+# 可选；systemd unit 已按安装方式设好。手动运行 weft-cli 时建议显式设置。
+# WEFT_APP_DIR=/srv/weft   # deb: /usr/share/weft
 BINDING=127.0.0.1
 PORT=5150
 
@@ -162,7 +196,8 @@ DB_AUTO_MIGRATE=false
 JWT_SECRET=REPLACE_WITH_OPENSSL_RAND_BASE64_48
 ADMIN_EMAIL=you@example.com
 SITE_BASE_URL=https://weft.example.com
-AGENT_API_TOKEN=REPLACE_WITH_OPENSSL_RAND_HEX_32   # 可留空，留空则 Agent API 公开
+AGENT_API_TOKEN=REPLACE_WITH_OPENSSL_RAND_HEX_32   # 旧版公开只读 token，可留空
+# 写入 Key 不放在 env：在 /admin/settings/api-keys 创建，或 weft-cli task agent:key-create
 
 SITE_THEME=default
 ```
@@ -182,7 +217,7 @@ SITE_THEME=default
 
 ### 5.2 `/etc/weft/production.yaml`
 
-仓库里的 `config/production.yaml` 已按生产环境写好：日志 JSON、`binding` 默认 `0.0.0.0`（由 `BINDING` 覆盖为回环）、静态目录指向 `themes/<SITE_THEME>/static`、数据库与密钥强制从环境变量读取、缺失即启动失败。
+仓库里的 `config/production.yaml` 已按生产环境写好：日志 JSON、`binding` 默认 `0.0.0.0`（由 `BINDING` 覆盖为回环）、静态目录指向 `$WEFT_APP_DIR/themes/<SITE_THEME>/static`、数据库与密钥强制从环境变量读取、缺失即启动失败。
 
 一般不需要改。要改的话保持这两条：
 
@@ -191,7 +226,7 @@ server:
   middlewares:
     static:
       folder:
-        path: "themes/<%= get_env(name="SITE_THEME", default="default") %>/static"
+        path: "<%= get_env(name="WEFT_APP_DIR", default=".") %>/themes/<%= get_env(name="SITE_THEME", default="default") %>/static"
 ```
 
 以及 `settings.media.upload_dir` 由 `MEDIA_DIR` 注入。
@@ -202,6 +237,7 @@ server:
 |---|---|---|
 | `LOCO_ENV` | 必填 `production` | 选择 `config/<env>.yaml` |
 | `LOCO_CONFIG_FOLDER` | 建议 `/etc/weft` | 配置目录（目录内含 `production.yaml`） |
+| `WEFT_APP_DIR` | systemd unit 设置 | 主题与 i18n 资源根目录（deb 为 `/usr/share/weft`，源码为 `/srv/weft`） |
 | `DATABASE_URL` | 必填 | SQLite 绝对路径 URI |
 | `JWT_SECRET` | 必填 | 管理员 cookie 签名 |
 | `ADMIN_EMAIL` | 建议必填 | 唯一允许登录 `/admin` 的邮箱 |
@@ -213,7 +249,7 @@ server:
 | `DB_MAX_CONNECTIONS` | `5` | SQLite 连接池上限 |
 | `DB_AUTO_MIGRATE` | 建议 `false` | 启动时自动迁移 |
 | `LOG_LEVEL` | `info` | `trace/debug/info/warn/error` |
-| `AGENT_API_TOKEN` | 可空 | 设置后 `/api/agent/*` 需要 Bearer token |
+| `AGENT_API_TOKEN` | 可空 | 旧版公开只读 Bearer token；写 Key 在后台创建并存入数据库 |
 | `AGENT_RATE_LIMIT_PER_MIN` | `30` | Agent 读请求限流 |
 | `AI_PROVIDER` | `offline` | `offline` 或 OpenAI-compatible 提供商 |
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `AI_MODEL` | 可选 | 模型默认值；后台 AI 设置优先 |
@@ -236,11 +272,11 @@ ExecStart=/usr/local/bin/weft-cli scheduler --config /opt/weft/etc/scheduler.yam
 
 ## 6. 初始化数据库与管理员
 
-以 `weft` 用户、带上环境变量执行（首次运行会创建 `/var/lib/weft/weft.sqlite`）：
+以 `weft` 用户、带上环境变量执行（首次运行会创建 `/var/lib/weft/weft.sqlite`）。如果用的是 `.deb`，`postinst` 已经执行过迁移，可跳过迁移步骤，直接创建管理员：
 
 ```bash
 sudo -u weft bash -c '
-  cd /srv/weft && set -a && . /etc/weft/weft.env && set +a &&
+  cd /srv/weft && set -a && . /etc/weft/weft.env && WEFT_APP_DIR=/srv/weft && set +a &&
   weft-cli db migrate
 '
 ```
@@ -249,8 +285,8 @@ sudo -u weft bash -c '
 
 ```bash
 sudo -u weft bash -c '
-  cd /srv/weft && set -a && . /etc/weft/weft.env && set +a &&
-  weft-cli task admin:create email:you@example.com name:"Admin" password:"change-me-12345"
+  cd /srv/weft && set -a && . /etc/weft/weft.env && WEFT_APP_DIR=/srv/weft && set +a &&
+  weft-cli task admin:create email:admin@example.com name:"Admin" password:"change-me-12345"
 '
 ```
 
@@ -258,7 +294,7 @@ sudo -u weft bash -c '
 
 ```bash
 sudo -u weft bash -c '
-  cd /srv/weft && set -a && . /etc/weft/weft.env && set +a &&
+  cd /srv/weft && set -a && . /etc/weft/weft.env && WEFT_APP_DIR=/srv/weft && set +a &&
   weft-cli task demo:seed
 '
 ```
@@ -270,6 +306,8 @@ weft-cli task admin:reset email:you@example.com password:"new-strong-password"
 ```
 
 ## 7. 启动服务
+
+> `.deb` 安装后三个 unit 已经 enabled + started；只有源码安装才需要执行本节。
 
 ```bash
 sudo systemctl enable --now weft.service
@@ -290,7 +328,9 @@ curl -fsS http://127.0.0.1:5150/health
 
 `deploy/weft.service` 的关键点：
 
-- `WorkingDirectory=/srv/weft`：主题、`assets/i18n`、静态文件都按这个目录解析。
+- `WorkingDirectory=/srv/weft`：命令行和相对路径的默认工作目录。
+- `Environment=WEFT_APP_DIR=/srv/weft`：主题、`assets/i18n`、静态文件都按这个绝对路径解析；即使从别的目录启动 CLI 也不会找不到资源。`.deb` 把它设为 `/usr/share/weft`。
+- `ExecStart=... start --server-and-worker`：在同一个进程里处理 HTTP 和后台 Worker；不要只写 `start`，否则后台任务不会执行。
 - `EnvironmentFile=/etc/weft/weft.env`：所有密钥和地址只在这里。
 - `StateDirectory=weft`：systemd 创建并授权 `/var/lib/weft`，配合 `ProtectSystem=strict` 后应用只能写这一个运行目录。
 - `ReadWritePaths=/var/backups/weft`：备份任务需要写这里。
@@ -302,8 +342,11 @@ curl -fsS http://127.0.0.1:5150/health
 
 ## 8. nginx 反向代理与 HTTPS
 
+源码安装在仓库根目录执行；`.deb` 的示例位于 `/usr/share/doc/weft/examples/nginx.conf.example`。
+
 ```bash
 sudo cp deploy/nginx.conf.example /etc/nginx/conf.d/weft.conf
+# .deb 安装：sudo cp /usr/share/doc/weft/examples/nginx.conf.example /etc/nginx/conf.d/weft.conf
 sudo $EDITOR /etc/nginx/conf.d/weft.conf   # 改成你的域名与证书路径
 sudo nginx -t && sudo systemctl reload nginx
 ```
@@ -398,10 +441,14 @@ curl -fsS http://127.0.0.1:5150/health
 
 ## 11. 主题与静态文件
 
+源码安装：
+
 ```text
 /srv/weft/themes/<name>/templates/   Tera 模板
 /srv/weft/themes/<name>/static/      CSS / JS / ECharts / 图片
 ```
+
+`.deb` 安装对应 `/usr/share/weft/themes/<name>/...`；`WEFT_APP_DIR` 指向 `/usr/share/weft`。升级 `.deb` 会覆盖这两个目录，所以自定义主题要放在单独的目录名里，或从源码重新打包。
 
 - 修改现有模板或 CSS：直接改 `/srv/weft/themes/...`，生产环境不热重载，需要 `systemctl restart weft`。
 - 切换主题：`SITE_THEME=mytheme` 后重启。
@@ -409,6 +456,19 @@ curl -fsS http://127.0.0.1:5150/health
 - 上传的媒体**不要**放进主题目录。
 
 ## 12. 升级与回滚
+
+### .deb 升级
+
+```bash
+bash packaging/build-deb.sh                 # 新版本
+sudo systemctl start weft-backup.service    # 可选：先备份
+sudo apt install ./dist/weft_<new-version>_<arch>.deb
+# 或者：sudo dpkg -i ./dist/weft_<new-version>_<arch>.deb
+```
+
+`prerm` 会停服务，`postinst` 会迁移并重新启动；`/etc/weft/weft.env`、数据库、上传文件和备份都保留。回滚到旧 `.deb` 时，如果新版本包含不可逆迁移，先用备份恢复数据库。
+
+### 源码安装升级
 
 ```bash
 # 1) 构建新版本
@@ -430,7 +490,7 @@ sudo rsync -a --delete themes/ /srv/weft/themes/
 sudo rsync -a --delete assets/ /srv/weft/assets/
 
 # 6) 迁移
-sudo -u weft bash -c 'cd /srv/weft && set -a && . /etc/weft/weft.env && set +a && weft-cli db migrate'
+sudo -u weft bash -c 'cd /srv/weft && set -a && . /etc/weft/weft.env && WEFT_APP_DIR=/srv/weft && set +a && weft-cli db migrate'
 
 # 7) 启动并验证
 sudo systemctl start weft.service weft-scheduler.service
@@ -462,8 +522,9 @@ journalctl -u weft-backup.service -n 50
 | 现象 | 排查 |
 |---|---|
 | 启动即退出，日志提示缺变量 | `EnvironmentFile` 里少了 `DATABASE_URL` / `JWT_SECRET`；`systemctl show weft -p Environment` 检查是否被加载 |
+| `service is not active`（deb 安装后） | 查看 `journalctl -u weft.service`；常见原因是 `DATABASE_URL` 目录不可写或迁移失败 |
 | `unable to open database file` | `/var/lib/weft` 权限或 `DATABASE_URL` 路径错误；确认 `weft` 用户可写 |
-| 页面 404 / 样式丢失 | `WorkingDirectory` 不是 `/srv/weft`，或 `themes/`、`assets/` 未同步 |
+| 页面 404 / 样式丢失 | `WEFT_APP_DIR`/`WorkingDirectory` 不是资源目录，或 `themes/`、`assets/` 未同步 |
 | 上传失败 | `MEDIA_DIR` 不可写，或 nginx `client_max_body_size` 太小 |
 | 图表不刷新 | `weft-scheduler.service` 未启动；`journalctl -u weft-scheduler` |
 | 管理端登录后立刻掉线 | `SITE_BASE_URL` 与实际访问协议/域名不一致，或改过 `JWT_SECRET` |
@@ -471,7 +532,7 @@ journalctl -u weft-backup.service -n 50
 
 ## 14. 上线检查清单
 
-- [ ] `JWT_SECRET` 与 `AGENT_API_TOKEN` 是随机生成、未提交到仓库的
+- [ ] `JWT_SECRET` 与 `AGENT_API_TOKEN` 是随机生成、未提交到仓库的；写入 Agent Key 已按需创建并可撤销
 - [ ] `/etc/weft/weft.env` 权限 `0640`，所有者为 `root:weft`
 - [ ] `ADMIN_EMAIL` 与实际管理员邮箱一致，密码不是示例密码
 - [ ] `SITE_BASE_URL` 是 HTTPS 的最终域名

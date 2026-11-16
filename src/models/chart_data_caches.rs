@@ -74,6 +74,19 @@ impl Model {
             .is_some_and(|expires| expires > Local::now().fixed_offset())
     }
 
+    /// Drop the cached payload for one chart. Used when a chart's data source
+    /// changes so clients never see the previous source's data as fresh.
+    ///
+    /// # Errors
+    /// Database failure.
+    pub async fn delete_for_chart(db: &DatabaseConnection, chart_spec_id: i64) -> ModelResult<u64> {
+        let result = Entity::delete_many()
+            .filter(Column::ChartSpecId.eq(chart_spec_id))
+            .exec(db)
+            .await?;
+        Ok(result.rows_affected)
+    }
+
     /// Delete cache rows that have been stale for more than `days` days.
     ///
     /// # Errors

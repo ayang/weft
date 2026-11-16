@@ -29,3 +29,6 @@ dist/
 
 # runtime media uploads
 media/
+
+# local Weft Agent credentials
+.weft-agent.env

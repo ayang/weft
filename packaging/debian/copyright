@@ -1,0 +1,11 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: weft
+Source: https://github.com/ayang/weft
+
+Files: *
+Copyright: 2026 Weft contributors
+License: all-rights-reserved
+ No permission is granted to use, copy, modify, or distribute this software
+ except as explicitly permitted by the copyright holder. The upstream source
+ tree does not contain a license file; this Debian package grants no additional
+ rights.

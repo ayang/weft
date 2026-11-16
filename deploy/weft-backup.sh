@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
 # Consistent SQLite backup + media archive, driven by weft-backup.timer.
-# Manual use:
-#   sudo -u weft /usr/local/bin/weft-backup
+# Manual use (path depends on the install method):
+#   sudo -u weft /usr/local/bin/weft-backup   # deploy/install.sh
+#   sudo -u weft /usr/lib/weft/weft-backup     # .deb package
 set -euo pipefail
 
-WEFT_CLI="${WEFT_CLI:-/usr/local/bin/weft-cli}"
-if [[ ! -x "$WEFT_CLI" ]]; then
+if [[ -z "${WEFT_CLI:-}" ]]; then
+  for candidate in /usr/bin/weft-cli /usr/local/bin/weft-cli; do
+    if [[ -x "$candidate" ]]; then
+      WEFT_CLI="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "${WEFT_CLI:-}" ]]; then
   WEFT_CLI="$(command -v weft-cli || true)"
 fi
-if [[ -z "$WEFT_CLI" || ! -x "$WEFT_CLI" ]]; then
-  echo "weft-backup: weft-cli not found (tried /usr/local/bin/weft-cli and PATH)" >&2
+if [[ -z "${WEFT_CLI:-}" || ! -x "$WEFT_CLI" ]]; then
+  echo "weft-backup: weft-cli not found (tried /usr/bin, /usr/local/bin and PATH)" >&2
   exit 1
 fi
 

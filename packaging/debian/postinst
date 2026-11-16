@@ -8,21 +8,40 @@ case "$1" in
   *) exit 0 ;;
 esac
 
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+CREATED_USER=0
 if ! getent group weft >/dev/null 2>&1; then
-  addgroup --system weft
+  groupadd --system weft
 fi
 if ! getent passwd weft >/dev/null 2>&1; then
-  adduser --system --ingroup weft --home /usr/share/weft \
+  useradd --system --gid weft --home-dir /usr/share/weft \
     --no-create-home --shell /usr/sbin/nologin weft
+  CREATED_USER=1
 fi
 
-install -d -m 0750 -o weft -g weft \
-  /var/lib/weft /var/lib/weft/media/uploads /var/backups/weft
+# Directories. `install -d` only applies ownership to the final path, so create
+# the middle directory explicitly; otherwise /var/lib/weft/media ends up root-owned.
+install -d -m 0750 -o weft -g weft /var/lib/weft
+install -d -m 0755 -o weft -g weft /var/lib/weft/media
+install -d -m 0750 -o weft -g weft /var/lib/weft/media/uploads /var/backups/weft
 install -d -m 0750 -o root -g weft /etc/weft
-# dpkg installs conffiles as root:root; the service user must be able to read
-# them, but not the whole world. weft.env is generated below.
-chown root:weft /etc/weft/production.yaml /etc/weft/scheduler.yaml
-chmod 0640 /etc/weft/production.yaml /etc/weft/scheduler.yaml
+
+# If the account was recreated (for example after a manual delete), repair
+# ownership so the service can open the existing database and uploads.
+if [ "$CREATED_USER" = 1 ]; then
+  find /var/lib/weft /var/backups/weft -xdev -exec chown -h weft:weft {} +
+fi
+
+# dpkg installs conffiles root:root. They contain no secrets (secrets live in
+# weft.env), so keep them world-readable and avoid surprising the service user.
+for f in /etc/weft/production.yaml /etc/weft/scheduler.yaml; do
+  if [ -f "$f" ]; then
+    chown root:weft "$f"
+    chmod 0644 "$f"
+  fi
+done
 
 if [ ! -f /etc/weft/weft.env ]; then
   install -m 0640 -o root -g weft /usr/share/weft/weft.env.example /etc/weft/weft.env
@@ -33,28 +52,50 @@ if [ ! -f /etc/weft/weft.env ]; then
   chown root:weft /etc/weft/weft.env
   chmod 0640 /etc/weft/weft.env
   echo "Weft: generated /etc/weft/weft.env with a random JWT secret and Agent token."
-  echo "Weft: edit ADMIN_EMAIL and SITE_BASE_URL before exposing the site."
+  echo "Weft: set ADMIN_EMAIL and SITE_BASE_URL in that file when you know the public URL."
 fi
 
-# Apply migrations as the service user so the database is owned by weft.
-# If migration fails, do not start the new binary against an old schema.
-MIGRATED=1
-if [ -x /usr/bin/weft-cli ]; then
-  if ! su -s /bin/sh weft -c \
-    'cd /usr/share/weft && set -a && . /etc/weft/weft.env && set +a && /usr/bin/weft-cli db migrate'; then
-    MIGRATED=0
-    echo "Weft: database migration failed. Fix /etc/weft/weft.env, then run:" >&2
-    echo "  sudo -u weft sh -c 'cd /usr/share/weft && set -a && . /etc/weft/weft.env && set +a && weft-cli db migrate'" >&2
-    echo "Weft: services were not started." >&2
-  fi
+WEB_PORT="$(sed -n 's/^PORT=//p' /etc/weft/weft.env | tail -n 1)"
+[ -n "$WEB_PORT" ] || WEB_PORT=5150
+ADMIN_EMAIL_HINT="$(sed -n 's/^ADMIN_EMAIL=//p' /etc/weft/weft.env | tail -n 1)"
+[ -n "$ADMIN_EMAIL_HINT" ] || ADMIN_EMAIL_HINT="admin@example.com"
+
+# Migrate before starting the new binary. A failure leaves the package
+# unconfigured (and the services stopped) instead of running against an old schema.
+if ! command -v weft-cli >/dev/null 2>&1; then
+  echo "Weft: weft-cli is missing or not executable; cannot migrate." >&2
+  exit 1
+fi
+if ! su -s /bin/sh weft -c \
+  'cd /usr/share/weft && set -a && . /etc/weft/weft.env && WEFT_APP_DIR=/usr/share/weft && PATH=/usr/bin:/bin && set +a && weft-cli db migrate'; then
+  echo "Weft: database migration failed. Fix /etc/weft/weft.env, then run:" >&2
+  echo "  sudo -u weft sh -c 'cd /usr/share/weft && set -a && . /etc/weft/weft.env && WEFT_APP_DIR=/usr/share/weft && set +a && weft-cli db migrate'" >&2
+  echo "Weft: services were not started." >&2
+  exit 1
 fi
 
 if command -v systemctl >/dev/null 2>&1; then
-  systemctl daemon-reload || true
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  # `systemctl enable` (rather than deb-systemd-helper enable) is intentional:
+  # the helper only enables once, so it would not restore the units after an
+  # `apt remove` followed by a reinstall.
   systemctl enable weft.service weft-scheduler.service weft-backup.timer >/dev/null 2>&1 || true
-  if [ "$MIGRATED" = 1 ]; then
+
+  # deb-systemd-invoke honours policy-rc.d (important for containers/chroots);
+  # fall back to systemctl on systems without init-system-helpers.
+  if command -v deb-systemd-invoke >/dev/null 2>&1; then
+    deb-systemd-invoke start weft.service weft-scheduler.service weft-backup.timer >/dev/null 2>&1 || true
+  else
     systemctl start weft.service weft-scheduler.service weft-backup.timer >/dev/null 2>&1 || true
   fi
+fi
+
+if systemctl is-active --quiet weft.service >/dev/null 2>&1; then
+  echo "Weft: service is running on http://127.0.0.1:${WEB_PORT}/"
+  echo "Weft: point nginx at that address, then create the admin account:"
+  echo "  sudo -u weft sh -c 'cd /usr/share/weft && set -a && . /etc/weft/weft.env && WEFT_APP_DIR=/usr/share/weft && set +a && weft-cli task admin:create email:$ADMIN_EMAIL_HINT name:Admin password:\"change-me-12345\"'"
+else
+  echo "Weft: service is not active. Check: journalctl -u weft.service" >&2
 fi
 
 exit 0

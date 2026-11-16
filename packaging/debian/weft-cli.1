@@ -1,0 +1,100 @@
+.TH WEFT-CLI 1 "2026-11-10" "weft 0.1.0" "User Commands"
+.SH NAME
+weft-cli \- Weft server, migration runner, scheduler and task CLI
+.SH SYNOPSIS
+.B weft-cli
+.I COMMAND
+.RI [ ARGS ]
+.SH DESCRIPTION
+.B weft-cli
+is the single Loco application binary shipped by the
+.B weft
+package. The package installs its runtime resources (themes and i18n files)
+under
+.I /usr/share/weft
+and configuration under
+.I /etc/weft
+.
+.PP
+The systemd units invoke it as:
+.PP
+.RS
+.B weft-cli start --server-and-worker --no-banner
+.RE
+.PP
+for the web process, and
+.PP
+.RS
+.B weft-cli scheduler --config /etc/weft/scheduler.yaml
+.RE
+.PP
+for the scheduler process.
+.SH COMMANDS
+.TP
+.B start
+Start the HTTP server. Add
+.B --server-and-worker
+to process background jobs in the same process.
+.TP
+.B db migrate
+Apply pending database migrations. Reads
+.I LOCO_ENV
+and
+.I LOCO_CONFIG_FOLDER
+from the environment; the packaged units use
+.I production
+and
+.I /etc/weft
+.
+.TP
+.B task \fINAME\fR [KEY:VALUE ...]
+Run an application task, for example
+.B admin:create
+or
+.BR db:backup .
+.TP
+.B scheduler --config \fIPATH\fR
+Run cron-driven maintenance jobs from a scheduler configuration file.
+.SH ENVIRONMENT
+.TP
+.B LOCO_ENV
+Environment name; the package uses
+.IR production .
+.TP
+.B LOCO_CONFIG_FOLDER
+Directory containing
+.IR production.yaml .
+The package uses
+.IR /etc/weft .
+.TP
+.B WEFT_APP_DIR
+Directory containing
+.I themes/
+and
+.IR assets/ .
+The package uses
+.IR /usr/share/weft .
+.TP
+.B DATABASE_URL
+SQLite connection URI; the package defaults to
+.IR sqlite:///var/lib/weft/weft.sqlite?mode=rwc .
+.TP
+.B JWT_SECRET
+Secret used to sign admin session cookies.
+.SH FILES
+.TP
+.I /etc/weft/weft.env
+Generated environment file read by the systemd units.
+.TP
+.I /etc/weft/production.yaml
+Main configuration.
+.TP
+.I /var/lib/weft
+SQLite database and uploaded media.
+.TP
+.I /var/backups/weft
+Database and media backups written by
+.BR weft-backup.timer .
+.SH SEE ALSO
+.BR systemctl (1),
+.I /usr/share/doc/weft/deployment.md

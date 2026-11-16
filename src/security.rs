@@ -14,7 +14,11 @@ use loco_rs::{auth::jwt::JWT, prelude::*};
 use serde_json::json;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::{data::settings::Settings, models::users, util::secure_eq};
+use crate::{
+    data::settings::Settings,
+    models::{agent_api_keys, users},
+    util::secure_eq,
+};
 
 /// Per-process resource gates. Small VPS deployments cannot afford unbounded
 /// background work or unbounded AI fan-out, so every expensive path takes one
@@ -180,8 +184,88 @@ pub fn clear_admin_cookie() -> String {
     "weft_admin=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0".to_string()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentPrincipal {
+    Anonymous,
+    /// The long-lived `AGENT_API_TOKEN` from config. Kept read-only so an
+    /// existing deployment token cannot silently gain write access.
+    Legacy,
+    /// A database-backed key created in `/admin/settings/api-keys` or by the
+    /// `agent:key-create` task.
+    Key,
+}
+
 pub struct AgentAuth {
+    /// Rate-limit bucket. Never the plaintext key.
     pub key: String,
+    pub scopes: agent_api_keys::Scopes,
+    pub principal: AgentPrincipal,
+    pub label: String,
+}
+
+impl AgentAuth {
+    #[must_use]
+    pub fn is_authenticated(&self) -> bool {
+        self.principal != AgentPrincipal::Anonymous
+    }
+
+    /// Drafts, paused charts, and the media library are manager-only. A
+    /// database key can read them; the legacy config token deliberately stays
+    /// on published public content, matching its old behaviour.
+    #[must_use]
+    pub fn can_read_private(&self) -> bool {
+        self.principal == AgentPrincipal::Key
+    }
+
+    /// 401 for anonymous callers, 403 for a legacy token that only has public
+    /// read access, or `None` when the caller may read manager-only data.
+    #[must_use]
+    pub fn private_read_error(&self) -> Option<Response> {
+        if self.can_read_private() {
+            None
+        } else if self.is_authenticated() {
+            Some(agent_error(
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                "the legacy config token can only read published public content; use a database Agent Key for drafts and the media library",
+            ))
+        } else {
+            self.anonymous_error()
+        }
+    }
+
+    /// A 401 response for anonymous callers, or `None` when authenticated.
+    #[must_use]
+    pub fn anonymous_error(&self) -> Option<Response> {
+        (!self.is_authenticated()).then(|| {
+            agent_error(
+                StatusCode::UNAUTHORIZED,
+                "unauthorized",
+                "this endpoint requires an agent API key",
+            )
+        })
+    }
+
+    /// 401 for anonymous callers, 403 for read-only keys, or `None` when the
+    /// key can write.
+    #[must_use]
+    pub fn write_error(&self) -> Option<Response> {
+        if !self.is_authenticated() {
+            Some(agent_error(
+                StatusCode::UNAUTHORIZED,
+                "unauthorized",
+                "write endpoints require an agent API key",
+            ))
+        } else if !self.scopes.can_write() {
+            Some(agent_error(
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                "this key is read-only; create a key with the write scope",
+            ))
+        } else {
+            None
+        }
+    }
 }
 
 impl FromRequestParts<AppContext> for AgentAuth {
@@ -192,45 +276,110 @@ impl FromRequestParts<AppContext> for AgentAuth {
         ctx: &AppContext,
     ) -> std::result::Result<Self, Self::Rejection> {
         let settings = Settings::from_context(ctx).map_err(|err| {
-            (
+            agent_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "configuration_error", "message": err.to_string()})),
+                "configuration_error",
+                &err.to_string(),
             )
-                .into_response()
         })?;
         let provided = header_token(&parts.headers).unwrap_or_default();
-        if !settings.agents.token.trim().is_empty()
-            && !secure_eq(provided.trim(), settings.agents.token.trim())
-        {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "unauthorized", "message": "invalid agent token"})),
-            )
-                .into_response());
-        }
-        let key = if provided.trim().is_empty() {
-            "anonymous".to_string()
-        } else {
-            format!("token:{}", short_hash(&provided))
-        };
-        let limit = settings.agents.rate_limit_per_min;
+        let provided = provided.trim();
+        let legacy = settings.agents.token.trim();
+
         let Some(limits) = ctx.shared_store.get::<Limits>() else {
-            return Err((
+            return Err(agent_error(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"error": "starting", "message": "rate limiter not ready"})),
-            )
-                .into_response());
+                "starting",
+                "rate limiter not ready",
+            ));
         };
-        if !limits.allow(&key, limit) {
-            return Err((
-                StatusCode::TOO_MANY_REQUESTS,
-                [(header::RETRY_AFTER, "60")],
-                Json(json!({"error": "rate_limited", "message": "try again in a minute"})),
+
+        let (principal, scopes, label, rate_key) = if provided.is_empty() {
+            if !legacy.is_empty() {
+                if !limits.allow("invalid-agent-key", 60) {
+                    return Err(rate_limited_response());
+                }
+                return Err(agent_error(
+                    StatusCode::UNAUTHORIZED,
+                    "unauthorized",
+                    "missing agent token",
+                ));
+            }
+            (
+                AgentPrincipal::Anonymous,
+                agent_api_keys::Scopes::read_only(),
+                "anonymous".to_string(),
+                "anonymous".to_string(),
             )
-                .into_response());
+        } else if !legacy.is_empty() && secure_eq(provided, legacy) {
+            (
+                AgentPrincipal::Legacy,
+                agent_api_keys::Scopes::read_only(),
+                "config-token".to_string(),
+                format!("token:{}", short_hash(provided)),
+            )
+        } else {
+            match agent_api_keys::Model::authenticate(&ctx.db, provided).await {
+                Ok(Some(key)) => {
+                    if let Err(err) = key.touch(&ctx.db).await {
+                        tracing::warn!(key_id = key.id, error = %err, "could not record key usage");
+                    }
+                    let scopes = key.scopes();
+                    (
+                        AgentPrincipal::Key,
+                        scopes,
+                        key.name.clone(),
+                        format!("key:{}", key.prefix),
+                    )
+                }
+                Ok(None) => {
+                    if !limits.allow("invalid-agent-key", 60) {
+                        return Err(rate_limited_response());
+                    }
+                    return Err(agent_error(
+                        StatusCode::UNAUTHORIZED,
+                        "unauthorized",
+                        "invalid or revoked agent key",
+                    ));
+                }
+                Err(err) => {
+                    tracing::error!(error = %err, "agent key lookup failed");
+                    return Err(agent_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "internal_error",
+                        "could not verify the agent key",
+                    ));
+                }
+            }
+        };
+
+        let limit = settings.agents.rate_limit_per_min;
+        // Anonymous public reads are deliberately unrated, like the HTML
+        // pages. Rate limits protect keys and the legacy token, not readers.
+        if principal != AgentPrincipal::Anonymous && !limits.allow(&rate_key, limit) {
+            return Err(rate_limited_response());
         }
-        Ok(Self { key })
+        Ok(Self {
+            key: rate_key,
+            scopes,
+            principal,
+            label,
+        })
     }
+}
+
+#[must_use]
+pub fn agent_error(status: StatusCode, code: &str, message: &str) -> Response {
+    (status, Json(json!({"error": code, "message": message}))).into_response()
+}
+
+fn rate_limited_response() -> Response {
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        [(header::RETRY_AFTER, "60")],
+        Json(json!({"error": "rate_limited", "message": "try again in a minute"})),
+    )
+        .into_response()
 }
 
 fn header_token(headers: &HeaderMap) -> Option<String> {

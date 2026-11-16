@@ -35,8 +35,8 @@ server:
       precompressed: false
       folder:
         uri: "/static"
-        path: "themes/<%= get_env(name="SITE_THEME", default="default") %>/static"
-      fallback: "themes/<%= get_env(name="SITE_THEME", default="default") %>/static/404.html"
+        path: "<%= get_env(name="WEFT_APP_DIR", default=".") %>/themes/<%= get_env(name="SITE_THEME", default="default") %>/static"
+      fallback: "<%= get_env(name="WEFT_APP_DIR", default=".") %>/themes/<%= get_env(name="SITE_THEME", default="default") %>/static/404.html"
 
 # Worker Configuration
 workers:

@@ -1,5 +1,8 @@
 pub mod admin_create;
 pub mod admin_reset;
+pub mod agent_key_create;
+pub mod agent_key_list;
+pub mod agent_key_revoke;
 pub mod charts_refresh_due;
 pub mod cleanup_cache;
 pub mod db_backup;

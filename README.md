@@ -2,7 +2,7 @@
 
 Weft 是一个 **AI 原生个人站点**：人类写作，AI 辅助编辑、作图、分类和索引，站点以人类读者为主。它不是静态站点生成器——首页、文章、Markdown、`llms.txt`、图表数据与 Agent API 都由 Loco 服务端在请求时生成。
 
-- 单一 Rust 二进制 + SQLite（WAL），无 Node 构建链、无 SPA、无 Redis / 消息队列
+- 单一 Rust 二进制 + SQLite（WAL），无 Node 构建链、无 SPA、无 Redis / 消息队列；运行时资源（`themes/`、`assets/`）随 `.deb` 安装到 `/usr/share/weft`
 - Loco 1.2 / Axum 0.8 / SeaORM 2
 - 服务端 Tera 模板 + 少量原生 JS + 本地 ECharts
 - 后台 Worker + Loco Scheduler
@@ -25,7 +25,7 @@ Weft 是一个 **AI 原生个人站点**：人类写作，AI 辅助编辑、作�
 | 管理端 | 密码登录（仅 `ADMIN_EMAIL`）、文章 CRUD 与发布流转、分类、媒体库、站点设置、AI 设置 |
 | 图表 | Chart Studio 可视化编辑 + AI 修改；static / SQL / HTTP 数据源；cron 刷新与退避重试 |
 | AI | 文章修订（材料 + 网页引用 + diff 应用）、从零创作、图表生成、自动分类；全部限定在登录后台 |
-| Agent API | 只读文章/图表接口，可选 Bearer token 与限流 |
+| Agent API | 公开只读 + API Key 写入：文章、草稿、媒体、图表；分权、可撤销、限流（旧 `AGENT_API_TOKEN` 仅公开只读） |
 | 媒体 | 图片 8 MB / 视频 12 MB，内容嗅探、媒体库复用、封面与 Banner 上传 |
 | 后台任务 | `refresh_chart`、`index_post`、`cleanup_cache` + Loco Scheduler 定时补偿 |
 
@@ -74,6 +74,51 @@ cargo loco task db:backup path:backups/before-migration.sqlite
 
 恢复前先停止服务，再把备份复制回数据库文件，并删除旧的 `-wal` / `-shm`。
 
+## Debian / Ubuntu 安装（.deb）
+
+在 Debian/Ubuntu 上构建并安装（只需要 `dpkg-deb`，不需要 `cargo-deb`）：
+
+```bash
+bash packaging/build-deb.sh
+sudo apt install ./dist/weft_<version>_<arch>.deb
+```
+
+安装后：
+
+- `weft.service` 监听 `127.0.0.1:5150`，`weft-scheduler.service` 和 `weft-backup.timer` 同时启用；
+- `/etc/weft/weft.env` 首次安装自动生成，含随机 `JWT_SECRET` / `AGENT_API_TOKEN`（旧版仅公开只读；草稿/写入请用后台创建的 Agent Key）；
+- 你只需要在 nginx 里把域名反代到 `127.0.0.1:5150`；
+- 把 `/etc/weft/weft.env` 的 `ADMIN_EMAIL` / `SITE_BASE_URL` 改成真实值，然后创建管理员：
+
+```bash
+sudo -u weft sh -c 'cd /usr/share/weft && set -a && . /etc/weft/weft.env && WEFT_APP_DIR=/usr/share/weft && set +a && weft-cli task admin:create email:admin@example.com name:"Admin" password:"change-me-12345"'
+```
+
+升级用新的 `.deb` 覆盖安装；`apt remove` 保留数据，`apt purge` 也保留 `/var/lib/weft` 与 `/var/backups/weft`。完整说明见 [deployment.md](deployment.md)。
+
+## Agent 写作 / 图表 API
+
+外部 Agent（Codex、Claude Code 等）不需要打开后台：在 `/admin/settings/api-keys` 创建一个带 `write` 权限的 Key（或用 `cargo loco task agent:key-create name:codex scopes:read,write`），然后：
+
+```bash
+export WEFT_BASE_URL="https://example.com/api/agent"
+export WEFT_API_KEY="weft_..."
+
+# 读草稿
+curl -sS "$WEFT_BASE_URL/posts?status=draft" -H "Authorization: Bearer $WEFT_API_KEY"
+# 写文章
+curl -sS -X POST "$WEFT_BASE_URL/posts" -H "Authorization: Bearer $WEFT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"标题","body_md":"# 开头\n\n正文。","status":"draft","tags":["Agent"]}'
+```
+
+支持新建/局部修改（`body_mode` + `expected_updated_at` 乐观锁）/发布/删除文章，multipart 上传图片与视频，Blueprint 或高级 JSON 两种方式建/改图表，以及立即刷新图表数据。Key 只存 SHA-256 哈希、可随时撤销；旧的 `AGENT_API_TOKEN` 仅公开只读兼容。
+
+- 后台直接下载自包含 Skill 包：`/admin/settings/api-keys` → “下载 Skill 包”（含 SKILL.md、README、references、env.example，不依赖本仓库）
+- 完整端点与字段：[docs/agent-api.md](docs/agent-api.md)
+- 给 Agent 的技能说明：[.claude/skills/weft-content/SKILL.md](.claude/skills/weft-content/SKILL.md)
+- OpenAPI：[docs/agent-openapi.yaml](docs/agent-openapi.yaml)
+
 ## 配置
 
 所有配置在 `config/<env>.yaml`（`development` / `test` / `production`），密钥通过 `get_env(...)` 插值，应用代码不直接读环境变量。
@@ -88,8 +133,9 @@ cargo loco task db:backup path:backups/before-migration.sqlite
 | `ADMIN_EMAIL` | `admin@example.com` | 唯一允许登录 `/admin` 的邮箱 |
 | `SITE_BASE_URL` | `http://localhost:5150` | sitemap / llms.txt / Agent API 绝对链接 |
 | `SITE_THEME` | `default` | 主题目录名，修改后重启 |
+| `WEFT_APP_DIR` | `.`（systemd unit 会设置为安装目录） | `themes/` 与 `assets/` 所在根目录 |
 | `MEDIA_DIR` | `media/uploads` | 上传文件目录；生产建议用绝对路径 |
-| `AGENT_API_TOKEN` | 空 | 设置后 `/api/agent/*` 需要 Bearer token |
+| `AGENT_API_TOKEN` | 空 | 旧版仅公开只读 token；草稿/写入用 `/admin/settings/api-keys` 创建的 Agent Key |
 | `AI_PROVIDER` | `offline` | `offline` 或 OpenAI-compatible 提供商 |
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `AI_MODEL` | 空 / OpenAI / `gpt-4o-mini` | 模型默认值；后台 AI 设置优先 |
 
@@ -99,9 +145,9 @@ cargo loco task db:backup path:backups/before-migration.sqlite
 - **功能**：[docs/features.md](docs/features.md)
 - **主题**：[themes/README.md](themes/README.md)
 
-管理后台：`/admin/settings/site`（站点名称、品牌、副标题、描述、作者、Banner、URL、每页文章数）、`/admin/settings/ai`（提供商、模型、Key）。数据库中的设置为运行时配置，保存后立即生效；`SITE_TITLE` 等环境变量只是首次启动的默认值。
+管理后台：`/admin/settings/site`（站点名称、品牌、副标题、描述、作者、Banner、URL、每页文章数）、`/admin/settings/ai`（提供商、模型、Key）、`/admin/settings/api-keys`（Agent 读写 Key）。数据库中的设置为运行时配置，保存后立即生效；`SITE_TITLE` 等环境变量只是首次启动的默认值。
 
-后台 Worker 默认为 `BackgroundAsync`。需要 scheduler 时：
+后台 Worker 默认为 `BackgroundAsync`。注意 `cargo loco start` 默认只启动 HTTP server；需要后台 Worker 时用 `cargo loco start --server-and-worker`（生产 unit 已这样配置）。需要 scheduler 时：
 
 ```bash
 # 与 Web 一起跑
