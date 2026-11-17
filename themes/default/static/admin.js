@@ -24,6 +24,207 @@
     });
   };
 
+  const filesFromTransfer = (data) => {
+    if (!data) return [];
+    const files = [];
+    const push = (file) => {
+      if (!file) return;
+      const duplicate = files.some((item) =>
+        item.name === file.name
+        && item.size === file.size
+        && item.type === file.type
+        && item.lastModified === file.lastModified);
+      if (!duplicate) files.push(file);
+    };
+    if (data.files && data.files.length) Array.from(data.files).forEach(push);
+    if (data.items) {
+      Array.from(data.items).forEach((item) => {
+        if (item.kind === 'file') push(item.getAsFile());
+      });
+    }
+    return files;
+  };
+
+  const uploadMediaFile = async (file) => {
+    const data = new FormData();
+    data.append('file', file, file.name || 'clipboard-upload');
+    const response = await fetch('/admin/media/upload', {
+      method: 'POST', body: data, headers: { accept: 'application/json' },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.message || payload.description || payload.error || `HTTP ${response.status}`);
+    }
+    return payload;
+  };
+
+  const uploadFiles = async (files, status) => {
+    const items = Array.from(files || []).filter((file) => file && (file.size > 0 || file.type));
+    const uploaded = [];
+    const errors = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const file = items[index];
+      if (status) {
+        status.textContent = items.length > 1
+          ? `上传中 ${index + 1}/${items.length}：${file.name || '剪贴板图片'}`
+          : `上传中：${file.name || '剪贴板图片'}`;
+      }
+      try {
+        uploaded.push(await uploadMediaFile(file));
+      } catch (error) {
+        errors.push(`${file.name || '文件'}：${error.message}`);
+      }
+    }
+    return { uploaded, errors };
+  };
+
+  const mediaMarker = (payload) => {
+    if (payload.kind === 'image') return payload.markdown;
+    if (payload.kind === 'video') return payload.video_marker;
+    return payload.attachment_marker || payload.markdown || payload.url;
+  };
+
+  const insertAtCursor = (textarea, marker) => {
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const text = `\n\n${marker}\n\n`;
+    textarea.value = `${textarea.value.slice(0, start)}${text}${textarea.value.slice(end)}`;
+    textarea.selectionStart = textarea.selectionEnd = start + text.length;
+    textarea.focus();
+  };
+
+  const errorSuffix = (errors) => (errors.length ? `；失败 ${errors.length} 个：${errors.join('；')}` : '');
+
+  const uploadTarget = () => {
+    const body = document.getElementById('body_md');
+    const postStatus = document.getElementById('post-media-status');
+    if (body && postStatus) return { kind: 'post', body, status: postStatus };
+    const form = document.getElementById('media-upload-form');
+    if (form) return { kind: 'library', status: document.getElementById('media-upload-status') };
+    const heroInput = document.getElementById('site-hero');
+    const heroFile = document.getElementById('hero-image-file');
+    if (heroInput && heroFile) {
+      return { kind: 'hero', input: heroInput, file: heroFile, status: document.getElementById('hero-upload-status') };
+    }
+    return null;
+  };
+
+  const handleIncomingFiles = async (files) => {
+    const target = uploadTarget();
+    if (!target) return { uploaded: [], errors: [] };
+    let incoming = Array.from(files || []);
+    if (target.kind === 'hero') {
+      const isImage = (file) => (file.type || '').startsWith('image/')
+        || /\.(jpe?g|png|webp|gif|avif)$/i.test(file.name || '');
+      incoming = incoming.filter(isImage).slice(0, 1);
+      if (!incoming.length) {
+        if (target.status) target.status.textContent = 'Banner 只能使用图片';
+        return { uploaded: [], errors: [] };
+      }
+    }
+    const { uploaded, errors } = await uploadFiles(incoming, target.status);
+    if (target.kind === 'post') {
+      if (uploaded.length) {
+        insertAtCursor(target.body, uploaded.map(mediaMarker).join('\n\n'));
+        if (target.status) {
+          target.status.textContent = `已上传 ${uploaded.length} 个文件并插入正文${errorSuffix(errors)}`;
+        }
+      } else if (target.status) {
+        target.status.textContent = errors.length ? `上传失败：${errors.join('；')}` : '没有选择文件';
+      }
+    } else if (target.kind === 'hero') {
+      const image = uploaded.find((item) => item.kind === 'image');
+      if (image) {
+        target.input.value = image.url;
+        target.input.dispatchEvent(new Event('change', { bubbles: true }));
+        target.file.value = '';
+        if (target.status) {
+          target.status.textContent = `已上传并填入 Banner${errorSuffix(errors)}`;
+        }
+      } else if (target.status) {
+        target.status.textContent = uploaded.length || errors.length
+          ? `Banner 只能使用图片${errorSuffix(errors)}`
+          : '没有选择文件';
+      }
+    } else if (target.status) {
+      if (uploaded.length) {
+        target.status.textContent = `已上传 ${uploaded.length} 个文件${errorSuffix(errors)}，正在刷新…`;
+        window.setTimeout(() => window.location.reload(), 450);
+      } else {
+        target.status.textContent = `上传失败：${errors.join('；')}`;
+      }
+    }
+    return { uploaded, errors };
+  };
+
+  const mediaShortcuts = () => {
+    if (!uploadTarget()) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'admin-drop-overlay';
+    overlay.innerHTML = '<div class="admin-drop-card"><strong>松开以上传</strong><span>图片、视频和附件会按当前页面自动处理</span></div>';
+    overlay.hidden = true;
+    document.body.append(overlay);
+    let dragDepth = 0;
+    const managedFileInputs = new Set(['media-file', 'post-media-file', 'hero-image-file']);
+    // The AI material picker is a separate upload target: let the browser set
+    // its file input instead of hijacking the drop into the article media flow.
+    const nativeFileInput = (event) => {
+      const target = event.target instanceof Element ? event.target.closest('input[type=file]') : null;
+      return target && !managedFileInputs.has(target.id) ? target : null;
+    };
+    const hasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes('Files');
+    const hideOverlay = () => {
+      dragDepth = 0;
+      overlay.hidden = true;
+    };
+    document.addEventListener('dragenter', (event) => {
+      if (nativeFileInput(event) || !hasFiles(event)) return;
+      event.preventDefault();
+      dragDepth += 1;
+      overlay.hidden = false;
+    });
+    document.addEventListener('dragover', (event) => {
+      if (nativeFileInput(event) || !hasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    });
+    document.addEventListener('dragleave', (event) => {
+      if (nativeFileInput(event) || !hasFiles(event)) return;
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (!dragDepth) overlay.hidden = true;
+    });
+    document.addEventListener('drop', (event) => {
+      if (nativeFileInput(event)) {
+        hideOverlay();
+        return;
+      }
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      hideOverlay();
+      const files = filesFromTransfer(event.dataTransfer);
+      if (files.length) handleIncomingFiles(files);
+    });
+    window.addEventListener('dragend', hideOverlay);
+    window.addEventListener('blur', hideOverlay);
+    document.addEventListener('paste', (event) => {
+      const data = event.clipboardData;
+      if (!data) return;
+      const target = uploadTarget();
+      if (!target) return;
+      const files = filesFromTransfer(data);
+      if (files.length) {
+        event.preventDefault();
+        handleIncomingFiles(files);
+        return;
+      }
+      const text = data.getData('text/uri-list') || data.getData('text/plain') || '';
+      if (/file:\/\//i.test(text) && target.status) {
+        target.status.textContent = '浏览器不允许网页读取本机文件路径；请直接拖拽文件，或点击“选择文件”。';
+      }
+    });
+  };
+
   const categoryRegenerate = () => {
     const button = document.getElementById('regenerate-categories');
     if (!button) return;
@@ -52,19 +253,104 @@
     const status = document.getElementById('media-upload-status');
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (!fileInput?.files?.length) return;
-      const data = new FormData();
-      data.append('file', fileInput.files[0]);
-      status.textContent = '上传中…';
-      try {
-        const response = await fetch('/admin/media/upload', { method: 'POST', body: data, headers: { accept: 'application/json' } });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.message || payload.description || payload.error || `HTTP ${response.status}`);
-        window.location.reload();
-      } catch (error) {
-        status.textContent = `失败：${error.message}`;
+      if (!fileInput?.files?.length) {
+        status.textContent = '请先选择文件，或把文件拖进本页 / 粘贴剪贴板图片';
+        return;
       }
+      await handleIncomingFiles(fileInput.files);
     });
+  };
+
+  const mediaManagement = () => {
+    const manager = document.querySelector('[data-media-manager]');
+    if (!manager) return;
+    const checkboxes = Array.from(manager.querySelectorAll('[data-media-checkbox]'));
+    const selectedButton = document.getElementById('media-delete-selected');
+    const selectUnused = document.getElementById('media-select-unused');
+    const deleteUnused = document.getElementById('media-delete-unused');
+    const status = document.getElementById('media-manage-status');
+    const unusedTotal = Number(manager.dataset.unusedCount || 0);
+    let busy = false;
+
+    const updateSelection = () => {
+      const count = checkboxes.filter((box) => box.checked && !box.disabled).length;
+      if (selectedButton) {
+        selectedButton.disabled = busy || count === 0;
+        selectedButton.textContent = count ? `删除选中（${count}）` : '删除选中';
+      }
+    };
+
+    const setBusy = (value) => {
+      busy = value;
+      if (selectUnused) selectUnused.disabled = value;
+      if (deleteUnused) deleteUnused.disabled = value || unusedTotal === 0;
+      updateSelection();
+    };
+
+    const summarize = (result) => {
+      const parts = [`已删除 ${result.deleted || 0} 个媒体`];
+      if (result.skipped?.length) parts.push(`${result.skipped.length} 个仍在使用中，已跳过`);
+      if (result.errors?.length) parts.push(`失败：${result.errors.join('；')}`);
+      return parts.join('；');
+    };
+
+    const deletePayload = async (payload, confirmation) => {
+      if (busy || !window.confirm(confirmation)) return;
+      setBusy(true);
+      if (status) status.textContent = '正在删除…';
+      try {
+        const response = await fetch('/admin/api/media/delete', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(result.message || result.description || result.error || `HTTP ${response.status}`);
+        }
+        if (status) status.textContent = summarize(result);
+        if (result.deleted > 0) {
+          window.setTimeout(() => window.location.reload(), 700);
+        } else {
+          setBusy(false);
+        }
+      } catch (error) {
+        if (status) status.textContent = `删除失败：${error.message}`;
+        setBusy(false);
+      }
+    };
+
+    selectUnused?.addEventListener('click', () => {
+      checkboxes.forEach((box) => {
+        if (!box.disabled) box.checked = true;
+      });
+      updateSelection();
+    });
+    selectedButton?.addEventListener('click', () => {
+      const ids = checkboxes
+        .filter((box) => box.checked && !box.disabled)
+        .map((box) => Number(box.value))
+        .filter((id) => Number.isFinite(id));
+      if (!ids.length) return;
+      deletePayload({ ids }, `确定删除选中的 ${ids.length} 个媒体？此操作不可恢复。`);
+    });
+    deleteUnused?.addEventListener('click', () => {
+      if (unusedTotal === 0) return;
+      deletePayload(
+        { unused: true },
+        `确定删除全部 ${unusedTotal} 个未使用媒体？使用中的文件会自动跳过，此操作不可恢复。`,
+      );
+    });
+    manager.querySelectorAll('[data-delete-media]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = Number(button.dataset.deleteMedia);
+        if (!Number.isFinite(id)) return;
+        const name = button.dataset.mediaName || '这个媒体';
+        deletePayload({ ids: [id] }, `确定删除「${name}」？此操作不可恢复。`);
+      });
+    });
+    checkboxes.forEach((box) => box.addEventListener('change', updateSelection));
+    updateSelection();
   };
 
   const copyValues = () => {
@@ -83,8 +369,6 @@
     });
   };
 
-
-
   const siteHero = () => {
     const input = document.getElementById('site-hero');
     const file = document.getElementById('hero-image-file');
@@ -97,24 +381,13 @@
     };
     input.addEventListener('change', updatePreview);
     button.addEventListener('click', async () => {
-      if (!file.files?.[0]) {
+      if (!file.files?.length) {
         status.textContent = '请先选择图片';
         return;
       }
-      status.textContent = '上传中…';
       button.disabled = true;
       try {
-        const data = new FormData();
-        data.append('file', file.files[0]);
-        const response = await fetch('/admin/media/upload', { method: 'POST', body: data, headers: { accept: 'application/json' } });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.message || payload.description || payload.error || `HTTP ${response.status}`);
-        input.value = payload.url;
-        updatePreview();
-        status.textContent = '已上传并填入';
-        file.value = '';
-      } catch (error) {
-        status.textContent = `失败：${error.message}`;
+        await handleIncomingFiles(file.files);
       } finally {
         button.disabled = false;
       }
@@ -163,8 +436,10 @@
       results.innerHTML = items.map((item) => {
         const thumb = item.kind === 'image'
           ? `<img src="${escape(item.url)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='/static/default-cover.svg'">`
-          : `<video src="${escape(item.url)}" preload="metadata" muted playsinline></video>`;
-        return `<button type="button" class="media-pick-card" data-url="${escape(item.url)}" data-kind="${escape(item.kind)}" data-markdown="${escape(item.markdown)}" data-video-marker="${escape(item.video_marker)}"><span class="media-pick-thumb">${thumb}</span><span class="media-pick-name">${escape(item.original_name)}</span><span class="muted small">${escape(item.kind)} · ${Math.max(1, Math.round(item.size / 1024))} KB</span></button>`;
+          : item.kind === 'video'
+            ? `<video src="${escape(item.url)}" preload="metadata" muted playsinline></video>`
+            : `<span class="media-pick-file">${escape(item.type_label || 'FILE')}</span>`;
+        return `<button type="button" class="media-pick-card" data-url="${escape(item.url)}" data-kind="${escape(item.kind)}" data-markdown="${escape(item.markdown)}" data-video-marker="${escape(item.video_marker)}" data-attachment-marker="${escape(item.attachment_marker || '')}"><span class="media-pick-thumb">${thumb}</span><span class="media-pick-name">${escape(item.original_name)}</span><span class="muted small">${escape(item.type_label || item.kind)} · ${escape(item.size_label || `${Math.max(1, Math.round(item.size / 1024))} KB`)}</span></button>`;
       }).join('');
       results.querySelectorAll('.media-pick-card').forEach((button) => {
         button.addEventListener('click', () => {
@@ -173,6 +448,7 @@
             kind: button.dataset.kind,
             markdown: button.dataset.markdown,
             videoMarker: button.dataset.videoMarker,
+            attachmentMarker: button.dataset.attachmentMarker,
           };
           results.querySelectorAll('.media-pick-card').forEach((item) => item.classList.remove('is-selected'));
           button.classList.add('is-selected');
@@ -232,14 +508,16 @@
     kind?.addEventListener('change', load);
     insert?.addEventListener('click', () => {
       if (!selected) { status.textContent = '请先选择一个文件'; return; }
-      insertBody(selected.kind === 'video' ? selected.videoMarker : selected.markdown);
+      insertBody(selected.kind === 'video'
+        ? selected.videoMarker
+        : (selected.kind === 'file' ? selected.attachmentMarker : selected.markdown));
       close();
       const postStatus = document.getElementById('post-media-status');
       if (postStatus) postStatus.textContent = '已从媒体库插入正文';
     });
     cover?.addEventListener('click', () => {
       if (!selected) { status.textContent = '请先选择一个文件'; return; }
-      if (selected.kind !== 'image') { status.textContent = '视频不能设为封面'; return; }
+      if (selected.kind !== 'image') { status.textContent = '只有图片可以设为封面'; return; }
       const input = document.getElementById('cover_image');
       if (input) input.value = selected.url;
       close();
@@ -267,52 +545,33 @@
     const body = document.getElementById('body_md');
     if (!fileInput || !insertButton || !coverButton) return;
 
-    const upload = async () => {
-      const file = fileInput.files?.[0];
-      if (!file) throw new Error('请选择文件');
-      const data = new FormData();
-      data.append('file', file);
-      const response = await fetch('/admin/media/upload', { method: 'POST', body: data, headers: { accept: 'application/json' } });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.message || payload.description || payload.error || `HTTP ${response.status}`);
-      return payload;
-    };
-
     insertButton.addEventListener('click', async () => {
-      status.textContent = '上传中…';
-      try {
-        const payload = await upload();
-        const marker = `\n\n${payload.kind === 'image' ? payload.markdown : payload.video_marker}\n\n`;
-        insertIntoBody(payload.kind === 'image' ? payload.markdown : payload.video_marker);
-        status.textContent = '已插入正文';
-        fileInput.value = '';
-      } catch (error) {
-        status.textContent = `失败：${error.message}`;
+      if (!fileInput.files?.length) {
+        status.textContent = '请选择文件，或拖拽 / 粘贴到正文区域';
+        return;
       }
+      await handleIncomingFiles(fileInput.files);
+      fileInput.value = '';
     });
 
-    const insertIntoBody = (marker) => {
-      if (!body) return;
-      const start = body.selectionStart ?? body.value.length;
-      const end = body.selectionEnd ?? start;
-      const text = `\n\n${marker}\n\n`;
-      body.value = `${body.value.slice(0, start)}${text}${body.value.slice(end)}`;
-      body.selectionStart = body.selectionEnd = start + text.length;
-      body.focus();
-    };
-
     coverButton.addEventListener('click', async () => {
-      status.textContent = '上传中…';
-      try {
-        const payload = await upload();
-        if (payload.kind !== 'image') throw new Error('视频不能设为封面');
-        const cover = document.getElementById('cover_image');
-        if (cover) cover.value = payload.url;
-        status.textContent = '已设为封面';
-        fileInput.value = '';
-      } catch (error) {
-        status.textContent = `失败：${error.message}`;
+      const isImage = (file) => (file.type || '').startsWith('image/')
+        || /\.(jpe?g|png|webp|gif|avif)$/i.test(file.name || '');
+      const candidates = Array.from(fileInput.files || []).filter(isImage);
+      if (!candidates.length) {
+        status.textContent = '请选择图片后再设为封面';
+        return;
       }
+      const { uploaded, errors } = await uploadFiles([candidates[0]], status);
+      const image = uploaded.find((item) => item.kind === 'image');
+      if (!image) {
+        status.textContent = errors.length ? `上传失败：${errors.join('；')}` : '封面必须使用图片';
+        return;
+      }
+      const cover = document.getElementById('cover_image');
+      if (cover) cover.value = image.url;
+      status.textContent = '已设为封面';
+      fileInput.value = '';
     });
   };
 
@@ -738,6 +997,8 @@
   insertChartMarkers();
   articleEditor();
   mediaLibrary();
+  mediaShortcuts();
+  mediaManagement();
   copyValues();
   postMedia();
   mediaPicker();

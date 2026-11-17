@@ -22,11 +22,11 @@ Weft 是一个 **AI 原生个人站点**：人类写作，AI 辅助编辑、作�
 | 区域 | 能力 |
 |---|---|
 | 公开阅读端 | 首页、文章、`.md`、标签/分类、归档、搜索、`llms.txt`、`sitemap.xml`、ETag |
-| 管理端 | 密码登录（仅 `ADMIN_EMAIL`）、文章 CRUD 与发布流转、分类、媒体库、站点设置、AI 设置 |
+| 管理端 | 密码登录（仅 `ADMIN_EMAIL`）、文章 CRUD 与发布流转、分类、媒体库（拖拽/粘贴上传、图片放大、未使用媒体清理）、站点设置、AI 设置 |
 | 图表 | Chart Studio 可视化编辑 + AI 修改；static / SQL / HTTP 数据源；cron 刷新与退避重试 |
 | AI | 文章修订（材料 + 网页引用 + diff 应用）、从零创作、图表生成、自动分类；全部限定在登录后台 |
 | Agent API | 公开只读 + API Key 写入：文章、草稿、媒体、图表；分权、可撤销、限流（旧 `AGENT_API_TOKEN` 仅公开只读） |
-| 媒体 | 图片 8 MB / 视频 12 MB，内容嗅探、媒体库复用、封面与 Banner 上传 |
+| 媒体 | 图片 8 MB / 视频 12 MB / 附件 15 MB；内容嗅探、拖拽与粘贴上传、文章图片点击放大、附件下载、未使用媒体检测与批量删除 |
 | 后台任务 | `refresh_chart`、`index_post`、`cleanup_cache` + Loco Scheduler 定时补偿 |
 
 功能细节（数据源、图表格式、AI 模式、数据模型、安全边界）见 [docs/features.md](docs/features.md)。
@@ -112,7 +112,7 @@ curl -sS -X POST "$WEFT_BASE_URL/posts" -H "Authorization: Bearer $WEFT_API_KEY"
   -d '{"title":"标题","body_md":"# 开头\n\n正文。","status":"draft","tags":["Agent"]}'
 ```
 
-支持新建/局部修改（`body_mode` + `expected_updated_at` 乐观锁）/发布/删除文章，multipart 上传图片与视频，Blueprint 或高级 JSON 两种方式建/改图表，以及立即刷新图表数据。Key 只存 SHA-256 哈希、可随时撤销；旧的 `AGENT_API_TOKEN` 仅公开只读兼容。
+支持新建/局部修改（`body_mode` + `expected_updated_at` 乐观锁）/发布/删除文章，multipart 上传图片、视频与附件，Blueprint 或高级 JSON 两种方式建/改图表，以及立即刷新图表数据。Key 只存 SHA-256 哈希、可随时撤销；旧的 `AGENT_API_TOKEN` 仅公开只读兼容。
 
 - 后台直接下载自包含 Skill 包：`/admin/settings/api-keys` → “下载 Skill 包”（含 SKILL.md、README、references、env.example，不依赖本仓库）
 - 完整端点与字段：[docs/agent-api.md](docs/agent-api.md)
@@ -159,7 +159,7 @@ cargo loco scheduler --config config/scheduler.yaml
 
 ## 媒体目录
 
-上传文件默认写入 `media/uploads/`，公开路径固定为 `/media/<filename>`。生产环境把 `MEDIA_DIR` 指向持久目录（例如 `/var/lib/weft/media/uploads`），升级时就不会被覆盖：
+上传文件默认写入 `media/uploads/`，公开路径固定为 `/media/<filename>`；附件下载走 `/media/<filename>/download`（带原始文件名）。生产环境把 `MEDIA_DIR` 指向持久目录（例如 `/var/lib/weft/media/uploads`），升级时就不会被覆盖：
 
 ```bash
 MEDIA_DIR=/var/lib/weft/media/uploads
@@ -185,7 +185,7 @@ src/
   models/           posts, tags, chart_*, embeddings, ai_sessions, ai_settings, site_settings, media
   charts/           数据源适配器、SQL 守卫、cron 到期判断、图表蓝图
   ai/               OpenAI-compatible 客户端 + 离线回退 + prompt/JSON 校验
-  media.rs          上传校验、存储与公开 URL
+  media.rs          上传校验、附件标记、下载响应头与公开 URL
   security.rs       管理 cookie、Agent token、限流、并发信号量
   workers/          refresh_chart, index_post, cleanup_cache
   tasks/            admin:create, admin:reset, db:backup, demo:seed, charts:refresh_due, ...

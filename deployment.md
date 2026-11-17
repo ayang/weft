@@ -353,7 +353,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 示例配置里已经处理：
 
-- `client_max_body_size 20m`：媒体上传（图片 8 MB / 视频 12 MB）需要；
+- `client_max_body_size 20m`：媒体上传（图片 8 MB / 视频 12 MB / 附件 15 MB）需要；
 - `proxy_read_timeout 120s`：AI 文章编辑是同步调用，可能接近 60s；
 - `X-Forwarded-Proto`：让应用知道外部是 HTTPS；
 - HSTS 默认注释掉，确认全站 HTTPS 后再开。

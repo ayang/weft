@@ -1,7 +1,7 @@
 use axum::{extract::Multipart, http::StatusCode};
 use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::{
     ai,
@@ -2023,34 +2023,23 @@ async fn media_page(
 ) -> Result<Response> {
     let settings = Settings::from_context(&ctx)?;
     let items = medias::Model::recent(&ctx.db, 100).await?;
+    let usage = media::usage_index(&ctx.db).await?;
+    // The page lists the newest 100 rows, but "delete all unused" applies to
+    // the whole library, so the count and confirmation must cover all rows.
+    let unused_total = medias::Entity::find()
+        .all(&ctx.db)
+        .await?
+        .iter()
+        .filter(|item| !usage.contains_key(&item.filename))
+        .count();
     let items = items
         .iter()
-        .map(|item| {
-            json!({
-                "id": item.id,
-                "url": media::public_url(&item.filename),
-                "filename": item.filename,
-                "original_name": item.original_name,
-                "kind": item.kind,
-                "mime": item.mime,
-                "size": item.size,
-                "created": item.created_at.format("%Y-%m-%d %H:%M").to_string(),
-                "markdown": if item.kind == "image" {
-                    format!(
-                        "![{}]({})",
-                        media::markdown_alt(&item.original_name),
-                        media::public_url(&item.filename)
-                    )
-                } else {
-                    media::video_marker(&item.filename)
-                },
-            })
-        })
+        .map(|item| media_item_json(item, usage.get(&item.filename).map(Vec::as_slice)))
         .collect::<Vec<_>>();
     format::render().header("cache-control", "no-store").view(
         &v,
         "admin/media.html",
-        data!({ "site": site_json(&settings), "items": items }),
+        data!({ "site": site_json(&settings), "items": items, "unused_total": unused_total }),
     )
 }
 
@@ -2067,25 +2056,10 @@ async fn media_api(
         100,
     )
     .await?;
+    let usage = media::usage_index(&ctx.db).await?;
     let items = items
         .iter()
-        .map(|item| {
-            json!({
-                "id": item.id,
-                "url": media::public_url(&item.filename),
-                "filename": item.filename,
-                "original_name": item.original_name,
-                "kind": item.kind,
-                "size": item.size,
-                "created": item.created_at.format("%Y-%m-%d %H:%M").to_string(),
-                "markdown": if item.kind == "image" {
-                    format!("![{}]({})", media::markdown_alt(&item.original_name), media::public_url(&item.filename))
-                } else {
-                    media::video_marker(&item.filename)
-                },
-                "video_marker": media::video_marker(&item.filename),
-            })
-        })
+        .map(|item| media_item_json(item, usage.get(&item.filename).map(Vec::as_slice)))
         .collect::<Vec<_>>();
     format::json(json!({ "items": items }))
 }
@@ -2114,7 +2088,7 @@ async fn media_upload(
             .await
             .map_err(|err| Error::string(&format!("读取上传文件失败：{err}")))?;
         if bytes.len() > media::MAX_UPLOAD_BYTES {
-            return bad_request("文件太大：图片最大 8 MB，视频最大 12 MB");
+            return bad_request("文件太大：图片最大 8 MB，视频最大 12 MB，附件最大 15 MB");
         }
         upload = Some((filename, bytes));
         break;
@@ -2126,22 +2100,96 @@ async fn media_upload(
         return bad_request(error.to_string());
     }
     let item = media::store(&ctx.db, &filename, &bytes).await?;
-    let url = media::public_url(&item.filename);
-    let markdown = if item.kind == "image" {
-        format!("![{}]({url})", media::markdown_alt(&item.original_name))
+    format::json(media_item_json(&item, None))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteMediaRequest {
+    #[serde(default)]
+    pub ids: Vec<i64>,
+    /// Delete every media file that no post, cover, hero or chart references.
+    #[serde(default)]
+    pub unused: bool,
+}
+
+#[debug_handler]
+async fn media_delete(
+    State(ctx): State<AppContext>,
+    _admin: AdminSession,
+    Json(request): Json<DeleteMediaRequest>,
+) -> Result<Response> {
+    if !request.unused && request.ids.is_empty() {
+        return bad_request("没有选择要删除的媒体");
+    }
+    let usage = media::usage_index(&ctx.db).await?;
+    let targets = if request.unused {
+        medias::Entity::find()
+            .all(&ctx.db)
+            .await?
+            .into_iter()
+            .filter(|item| !usage.contains_key(&item.filename))
+            .collect::<Vec<_>>()
     } else {
-        media::video_marker(&item.filename)
+        let mut ids = request.ids;
+        ids.sort_unstable();
+        ids.dedup();
+        medias::Entity::find()
+            .filter(medias::Column::Id.is_in(ids))
+            .all(&ctx.db)
+            .await?
     };
+
+    let mut deleted = 0_u64;
+    let mut skipped = Vec::new();
+    let mut errors = Vec::new();
+    for item in targets {
+        if let Some(references) = usage.get(&item.filename) {
+            skipped.push(json!({
+                "id": item.id,
+                "original_name": item.original_name,
+                "filename": item.filename,
+                "usage": references,
+            }));
+            continue;
+        }
+        if let Err(error) = media::remove_file(&item.filename).await {
+            errors.push(format!("{}：{}", item.original_name, error));
+            continue;
+        }
+        if let Err(error) = medias::Entity::delete_by_id(item.id).exec(&ctx.db).await {
+            errors.push(format!("{}：数据库删除失败：{}", item.original_name, error));
+            continue;
+        }
+        deleted += 1;
+    }
+
     format::json(json!({
+        "deleted": deleted,
+        "skipped": skipped,
+        "errors": errors,
+    }))
+}
+
+fn media_item_json(item: &medias::Model, usage: Option<&[media::MediaUsage]>) -> Value {
+    let usage = usage.unwrap_or_default();
+    json!({
         "id": item.id,
-        "url": url,
+        "url": media::public_url(&item.filename),
+        "download_url": media::download_url(&item.filename),
         "filename": item.filename,
+        "original_name": item.original_name,
         "kind": item.kind,
         "mime": item.mime,
         "size": item.size,
-        "markdown": markdown,
+        "size_label": media::human_size(item.size),
+        "type_label": media::type_label(&item.filename),
+        "created": item.created_at.format("%Y-%m-%d %H:%M").to_string(),
+        "markdown": media::markdown_for(item),
         "video_marker": media::video_marker(&item.filename),
-    }))
+        "attachment_marker": media::attachment_marker(&item.filename, &item.original_name),
+        "used": !usage.is_empty(),
+        "usage": usage,
+    })
 }
 
 #[debug_handler]
@@ -2350,6 +2398,7 @@ pub fn routes() -> Routes {
         .add("/media", get(media_page))
         .add("/media/upload", post(media_upload))
         .add("/api/media", get(media_api))
+        .add("/api/media/delete", post(media_delete))
         .add("/api/ai/edit-article", post(article_edit))
         .add("/api/charts/{id}/data", get(chart_preview_data))
         .add("/api/charts/assist", post(chart_assist))

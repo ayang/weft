@@ -643,7 +643,9 @@ async fn upload_media(
             }
         };
         if bytes.len() > media::MAX_UPLOAD_BYTES {
-            return Ok(bad_request("文件太大：图片最大 8 MB，视频最大 12 MB"));
+            return Ok(bad_request(
+                "文件太大：图片最大 8 MB，视频最大 12 MB，附件最大 15 MB",
+            ));
         }
         upload = Some((filename, bytes));
         break;
@@ -665,22 +667,20 @@ async fn upload_media(
 }
 
 fn media_json(item: &medias::Model) -> Value {
-    let url = media::public_url(&item.filename);
-    let markdown = if item.kind == "image" {
-        format!("![{}]({url})", media::markdown_alt(&item.original_name))
-    } else {
-        media::video_marker(&item.filename)
-    };
     json!({
         "id": item.id,
-        "url": url,
+        "url": media::public_url(&item.filename),
+        "download_url": media::download_url(&item.filename),
         "filename": item.filename,
         "original_name": item.original_name,
         "kind": item.kind,
         "mime": item.mime,
         "size": item.size,
-        "markdown": markdown,
+        "size_label": media::human_size(item.size),
+        "type_label": media::type_label(&item.filename),
+        "markdown": media::markdown_for(item),
         "video_marker": media::video_marker(&item.filename),
+        "attachment_marker": media::attachment_marker(&item.filename, &item.original_name),
         "created_at": item.created_at.to_rfc3339(),
     })
 }

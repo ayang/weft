@@ -329,7 +329,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [image, video]
+            enum: [image, video, file]
         - $ref: "#/components/parameters/Limit"
       responses:
         "200":
@@ -349,7 +349,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
-      summary: Upload an image or video (multipart field `file`)
+      summary: Upload an image, video or attachment (multipart field `file`)
       operationId: uploadMedia
       security:
         - bearerAuth: []
@@ -779,14 +779,22 @@ components:
           type: string
         kind:
           type: string
-          enum: [image, video]
+          enum: [image, video, file]
         mime:
           type: string
         size:
           type: integer
+        size_label:
+          type: string
+        type_label:
+          type: string
+        download_url:
+          type: string
         markdown:
           type: string
         video_marker:
+          type: string
+        attachment_marker:
           type: string
         created_at:
           type: string

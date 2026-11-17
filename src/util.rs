@@ -42,6 +42,23 @@ pub fn render_markdown(markdown: &str) -> String {
     out
 }
 
+/// Escape text that is placed into hand-built HTML (marker rendering).
+#[must_use]
+pub fn escape_html(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 /// Rough reading time; CJK characters count faster than Latin words.
 #[must_use]
 pub fn reading_minutes(markdown: &str) -> i64 {
@@ -254,6 +271,14 @@ mod tests {
     fn chunks_cover_text() {
         let chunks = chunk_text(&"a".repeat(1200), 500, 50);
         assert!(chunks.len() >= 3);
+    }
+
+    #[test]
+    fn escapes_html_attribute_text() {
+        assert_eq!(
+            escape_html("<a href=\"x\">&'\""),
+            "&lt;a href=&quot;x&quot;&gt;&amp;&#39;&quot;"
+        );
     }
 
     #[test]

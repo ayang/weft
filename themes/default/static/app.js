@@ -141,6 +141,79 @@
     }
   };
 
+
+  const lightbox = () => {
+    const selector = '.prose img, .post-cover img, .media-preview img, .hero-image-preview';
+    const images = Array.from(document.querySelectorAll(selector))
+      .filter((img) => !img.hasAttribute('data-no-zoom'));
+    if (!images.length) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'zoom-overlay';
+    overlay.hidden = true;
+    overlay.innerHTML = '<button class="zoom-close" type="button" aria-label="关闭">×</button><img class="zoom-image" alt=""><p class="zoom-caption" aria-live="polite"></p>';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', '图片预览');
+    document.body.append(overlay);
+    const zoomImage = overlay.querySelector('.zoom-image');
+    const caption = overlay.querySelector('.zoom-caption');
+    const closeButton = overlay.querySelector('.zoom-close');
+    let lastFocused = null;
+
+    const close = () => {
+      if (overlay.hidden) return;
+      overlay.hidden = true;
+      document.body.classList.remove('zoom-open');
+      zoomImage.removeAttribute('src');
+      if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
+    };
+
+    const open = (img) => {
+      lastFocused = document.activeElement;
+      zoomImage.src = img.currentSrc || img.src;
+      zoomImage.alt = img.alt || '';
+      const figure = img.closest('figure');
+      const figureCaption = figure?.querySelector('figcaption')?.textContent?.trim();
+      const text = figureCaption || img.alt || '';
+      caption.textContent = text;
+      caption.hidden = !text;
+      overlay.hidden = false;
+      document.body.classList.add('zoom-open');
+      closeButton.focus();
+    };
+
+    images.forEach((img) => {
+      img.classList.add('is-zoomable');
+      img.setAttribute('tabindex', '0');
+      img.setAttribute('role', 'button');
+      if (!img.getAttribute('aria-label')) {
+        img.setAttribute('aria-label', img.alt ? `放大查看：${img.alt}` : '放大查看图片');
+      }
+      img.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        open(img);
+      });
+      img.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        open(img);
+      });
+    });
+
+    closeButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      close();
+    });
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close();
+    });
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') close();
+    });
+  };
+
   readingProgress();
   initCharts();
+  lightbox();
 })();

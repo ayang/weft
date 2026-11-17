@@ -101,8 +101,8 @@ X-Agent-Token: weft_...
 | PATCH | `/charts/{id}` | write | 局部修改图表 |
 | DELETE | `/charts/{id}` | write | 删除图表 |
 | POST | `/charts/{id}/refresh` | write | 立即拉取数据并返回结果 |
-| GET | `/media?q=&kind=&limit=` | read | 搜索媒体库 |
-| POST | `/media` | write | multipart 上传图片/视频 |
+| GET | `/media?q=&kind=&limit=` | read | 搜索媒体库（`kind=image|video|file`） |
+| POST | `/media` | write | multipart 上传图片、视频或附件 |
 
 完整机器可读契约见 [`agent-openapi.yaml`](agent-openapi.yaml)。给 Agent 的技能说明见 [`.claude/skills/weft-content/SKILL.md`](../.claude/skills/weft-content/SKILL.md)。
 
@@ -211,15 +211,19 @@ curl -sS -X POST "$WEFT_BASE_URL/media" \
   "kind": "image",
   "mime": "image/png",
   "size": 204800,
+  "size_label": "200 KB",
+  "type_label": "PNG",
+  "download_url": "/media/9f8e....png/download",
   "markdown": "![cover.png](/media/9f8e....png)",
   "video_marker": "[[video:9f8e....png]]",
+  "attachment_marker": "[[file:9f8e....png|cover.png]]",
   "created_at": "2026-11-11T10:00:00+08:00"
 }
 ```
 
-- 图片 JPG/PNG/WebP/GIF/AVIF，≤ 8 MB；视频 MP4/WebM，≤ 12 MB。类型按文件内容嗅探，扩展名写错也能识别。
-- 图片把 `markdown` 插入正文；视频把 `video_marker` 单独一行放入正文。
-- `GET /media?q=cover&kind=image` 复用已上传素材。
+- 图片 JPG/PNG/WebP/GIF/AVIF，≤ 8 MB；视频 MP4/WebM，≤ 12 MB；其他文件作为附件，≤ 15 MB。图片/视频按文件内容嗅探，扩展名写错也能识别；HTML/SVG/脚本类附件出于安全考虑拒收，请打包成 ZIP。
+- 图片把 `markdown` 插入正文；视频把 `video_marker` 单独一行放入正文；附件把 `attachment_marker` 单独一行放入正文。附件下载使用 `download_url`（响应带原始文件名）。
+- `GET /media?q=cover&kind=image` 复用已上传素材；`kind=file` 只看附件。
 
 Agent 需要从网页取图时，先用它自己的下载能力拿到文件，再 `-F file=@...` 上传；服务端不代抓任意 URL，避免 SSRF。
 

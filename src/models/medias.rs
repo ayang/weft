@@ -29,12 +29,39 @@ impl Model {
         if !query.is_empty() {
             find = find.filter(Column::OriginalName.like(format!("%{query}%")));
         }
-        if let Some(kind) = kind.filter(|kind| *kind == "image" || *kind == "video") {
+        if let Some(kind) = kind.filter(|kind| matches!(*kind, "image" | "video" | "file")) {
             find = find.filter(Column::Kind.eq(kind));
         }
         Ok(find
             .order_by_desc(Column::CreatedAt)
             .limit(limit.clamp(1, 200))
+            .all(db)
+            .await?)
+    }
+
+    /// # Errors
+    /// Database failure.
+    pub async fn find_by_filename(
+        db: &DatabaseConnection,
+        filename: &str,
+    ) -> ModelResult<Option<Self>> {
+        Ok(Entity::find()
+            .filter(Column::Filename.eq(filename))
+            .one(db)
+            .await?)
+    }
+
+    /// # Errors
+    /// Database failure.
+    pub async fn find_by_filenames(
+        db: &DatabaseConnection,
+        filenames: &[String],
+    ) -> ModelResult<Vec<Self>> {
+        if filenames.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(Entity::find()
+            .filter(Column::Filename.is_in(filenames.to_vec()))
             .all(db)
             .await?)
     }

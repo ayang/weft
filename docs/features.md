@@ -22,7 +22,7 @@
 - `/admin/posts`：文章管理、Markdown 编辑、标签、草稿/审核/发布流转
 - `/admin/categories`：AI 全站分类
 - `/admin/charts`：图表列表、手动刷新、cron、失败退避状态
-- `/admin/media`：媒体库上传、搜索、复用
+- `/admin/media`：媒体库上传（支持拖拽/粘贴）、搜索、复用、图片点击放大、未使用检测与单个/批量删除
 - `/admin/settings/site`：站点名称、品牌名、副标题、描述、作者、首页 Banner、站点 URL、每页文章数；保存后立即生效
 - `/admin/settings/ai`：AI 提供商、Base URL、模型与 Key；支持 DeepSeek / OpenAI / OpenRouter / Moonshot / Qwen / Groq / SiliconFlow / Ollama 预设
 
@@ -52,7 +52,7 @@
 | PATCH/DELETE | `/api/agent/charts/:id` | 局部修改/删除图表 |
 | POST | `/api/agent/charts/:id/refresh` | 立即拉取数据 |
 | GET | `/api/agent/media?q=&kind=` | 媒体库搜索 |
-| POST | `/api/agent/media` | multipart 上传图片/视频 |
+| POST | `/api/agent/media` | multipart 上传图片/视频/附件 |
 
 图表支持 Blueprint 模式（`data` + `kind` + `x_field`/`y_fields`，服务端生成受控 ECharts spec）和高级模式（`render_config` + `data_source_config`）；SQL 只读白名单、HTTP 域名白名单仍然生效。写操作记录审计日志，不打印 Key。后台 `/admin/settings/api-keys` 可下载自包含的 `weft-content-skill.zip`（SKILL.md + references + README + env.example），供本项目代码之外使用。完整契约见 [agent-api.md](agent-api.md) 与 [agent-openapi.yaml](agent-openapi.yaml)。
 
@@ -120,11 +120,16 @@ GET /api/charts/:id/data → 前端 ECharts 渲染
 
 - 图片：JPG/PNG/WebP/GIF/AVIF，最大 8 MB
 - 视频：MP4/WebM，最大 12 MB
-- 按文件内容识别类型，扩展名写错也能正常入库
-- 文件保存到 `MEDIA_DIR`（默认 `media/uploads/`），公开地址 `/media/<filename>`
-- 图片复制 Markdown 插入正文；视频使用 `[[video:文件名]]` 单独一行
+- 附件：PDF、Office、ZIP、文本等，最大 15 MB；HTML/SVG/脚本类文件拒收
+- 按文件内容识别图片/视频，扩展名写错也能正常入库；其他文件按扩展名作为附件
+- 文件保存到 `MEDIA_DIR`（默认 `media/uploads/`），公开地址 `/media/<filename>`，附件下载地址 `/media/<filename>/download`
+- 后台上传支持多选、整页拖拽和剪贴板粘贴（截图或从文件管理器复制的文件）
+- 图片复制 Markdown 插入正文；视频使用 `[[video:文件名]]`；附件使用 `[[file:文件名|显示名]]` 单独一行，前台渲染为下载卡片
+- 前台文章图片和封面点击可放大；后台媒体库与 Banner 预览同样可点击放大
 - 文章封面可直接上传，也可从媒体库按缩略图选择
-- 视频不转码，建议上传 H.264 MP4 或 WebM
+- 视频不转码，建议使用 H.264 MP4 或 WebM
+- 媒体库会自动扫描文章正文、封面、首页 Banner 和图表配置中的引用，标记“使用中/未使用”；未使用文件可单个删除、勾选批量删除或一键清理，使用中的文件会被跳过
+- 扫描覆盖所有文章状态（草稿、审核中、已发布），不会因为文章未发布而误删图片
 
 `MEDIA_DIR` 是运行时持久数据（已加入 `.gitignore`），备份数据库时必须同时备份该目录。
 
@@ -159,7 +164,7 @@ SITE_THEME=mytheme ./scripts/start-dev.sh
 - `ai_sessions`：purpose、provider、model、messages、tool_calls、status、token/成本估算、错误
 - `ai_settings`：管理端保存的运行时提供商、Base URL、模型、Key 与启用状态（Key 不回显）
 - `site_settings`：站点名称、品牌、副标题、描述、作者、首页 Banner、URL、每页文章数
-- `media`：本地上传图片/视频的元数据；文件位于 `MEDIA_DIR`
+- `media`：本地上传图片/视频/附件的元数据；文件位于 `MEDIA_DIR`
 - `agent_api_keys`：Agent Key 名称、前缀、SHA-256 哈希、scopes、最近使用、撤销时间
 - `categories`：AI 生成的分类；`posts.category_id` 关联文章
 - `chart_specs`：意图、kind、数据源配置、render_config、cron、最后成功/失败、退避

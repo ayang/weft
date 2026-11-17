@@ -133,7 +133,7 @@ PATCH accepts any subset of `title`, `slug`, `summary`, `body_md`, `status`,
 Empty string clears `summary` / `cover_image`; `tags: []` clears tags.
 Setting `status: "published"` publishes and rebuilds the index.
 
-## Upload an image
+## Upload an image, video or attachment
 
 ```bash
 curl -sS -X POST "$WEFT_BASE_URL/media" \
@@ -143,8 +143,14 @@ curl -sS -X POST "$WEFT_BASE_URL/media" \
 
 Response includes `markdown` (`![name](/media/....png)`) and `url`. Put the
 markdown in `body_md` (e.g. after the intro), or use `url` for `cover_image`.
-Limits: images ≤ 8 MB (JPG/PNG/WebP/GIF/AVIF), video ≤ 12 MB (MP4/WebM).
-To reuse a previous upload, `GET /media?q=cover&kind=image`.
+Limits: images ≤ 8 MB (JPG/PNG/WebP/GIF/AVIF), video ≤ 12 MB (MP4/WebM),
+attachments ≤ 15 MB (PDF/Office/ZIP/text…; HTML/SVG/scripts are refused, ZIP
+them instead). To reuse a previous upload, `GET /media?q=cover&kind=image` or
+`kind=file` for attachments.
+
+For a downloadable attachment, put `attachment_marker` on its own line in
+`body_md`; the public page renders a download card. The server returns the
+original name in the download's `Content-Disposition`.
 
 If the source is a web image, download it with your own tools first, then
 upload the file. The Weft server does not fetch arbitrary image URLs.

@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::{
     data::settings::Settings,
-    models::{categories, chart_data_caches, chart_specs, post_tags, posts, tags},
+    models::{categories, chart_data_caches, chart_specs, medias, post_tags, posts, tags},
     util,
     views::{
         agent::markdown_document,
@@ -118,7 +118,14 @@ async fn post_page(
         chart_views.push(ChartView::from_model(chart, cache.as_ref()));
     }
     let body_md = util::strip_duplicate_title(&post.body_md, &post.title);
-    let (body_html, inline_charts) = render_body_with_charts(&v, &body_md, &chart_views)?;
+    let attachment_names = attachment_filenames(&body_md);
+    let attachments = medias::Model::find_by_filenames(&ctx.db, &attachment_names)
+        .await?
+        .into_iter()
+        .map(|item| (item.filename.clone(), item))
+        .collect::<HashMap<_, _>>();
+    let (body_html, inline_charts) =
+        render_body_with_charts(&v, &body_md, &chart_views, &attachments)?;
     let end_charts = chart_views
         .into_iter()
         .filter(|chart| !inline_charts.contains(&chart.id))
@@ -435,6 +442,67 @@ fn render_video(filename: &str) -> String {
     )
 }
 
+fn parse_attachment_marker(line: &str) -> Option<(&str, Option<&str>)> {
+    let trimmed = line.trim();
+    let inner = trimmed.strip_prefix("[[file:")?.strip_suffix("]]")?;
+    let (filename, label) = inner
+        .split_once('|')
+        .map_or((inner, None), |(filename, label)| (filename, Some(label)));
+    let filename = filename.trim();
+    if !crate::media::safe_filename(filename) {
+        return None;
+    }
+    let label = label.map(str::trim).filter(|label| !label.is_empty());
+    Some((filename, label))
+}
+
+fn attachment_filenames(body: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut in_fence = false;
+    for line in body.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if let Some((filename, _label)) = parse_attachment_marker(line) {
+            names.push(filename.to_string());
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn render_attachment(filename: &str, label: Option<&str>, item: Option<&medias::Model>) -> String {
+    let name = label
+        .map(ToString::to_string)
+        .or_else(|| item.map(|item| item.original_name.clone()))
+        .unwrap_or_else(|| "附件".to_string());
+    let name = util::truncate_chars(&name, 120);
+    let type_label = crate::media::type_label(filename);
+    let size = item.map_or_else(String::new, |item| crate::media::human_size(item.size));
+    let meta = if size.is_empty() {
+        util::escape_html(&type_label)
+    } else {
+        format!(
+            "{} · {}",
+            util::escape_html(&type_label),
+            util::escape_html(&size)
+        )
+    };
+    format!(
+        "<figure class=\"media-attachment\"><a class=\"attachment-card\" href=\"{}\" download><span class=\"attachment-glyph\" aria-hidden=\"true\">{}</span><span class=\"attachment-main\"><strong>{}</strong><span class=\"muted small\">{}</span></span><span class=\"attachment-cta\">下载 ↓</span></a></figure>",
+        util::escape_html(&crate::media::download_url(filename)),
+        util::escape_html(&type_label),
+        util::escape_html(&name),
+        meta,
+    )
+}
+
 fn parse_chart_marker(line: &str) -> Option<i64> {
     let trimmed = line.trim();
     let inner = trimmed.strip_prefix("[[chart:")?.strip_suffix("]]")?;
@@ -445,6 +513,7 @@ fn render_body_with_charts(
     v: &TeraView,
     body: &str,
     charts: &[ChartView],
+    attachments: &HashMap<String, medias::Model>,
 ) -> Result<(String, HashSet<i64>)> {
     let by_id = charts
         .iter()
@@ -463,6 +532,18 @@ fn render_body_with_charts(
             continue;
         }
         if !in_fence {
+            if let Some((filename, label)) = parse_attachment_marker(line) {
+                if !segment.trim().is_empty() {
+                    output.push_str(&util::render_markdown(&segment));
+                    segment.clear();
+                }
+                output.push_str(&render_attachment(
+                    filename,
+                    label,
+                    attachments.get(filename),
+                ));
+                continue;
+            }
             if let Some(filename) = parse_video_marker(line) {
                 if !segment.trim().is_empty() {
                     output.push_str(&util::render_markdown(&segment));
@@ -509,12 +590,63 @@ async fn media_file(AxumPath(filename): AxumPath<String>) -> Result<Response> {
                 .map_err(|err| Error::string(&err.to_string()));
         }
     };
+    let disposition = if crate::media::is_inline_media(&filename) {
+        "inline".to_string()
+    } else {
+        crate::media::content_disposition(&filename)
+    };
     Response::builder()
         .status(StatusCode::OK)
         .header(
             header::CONTENT_TYPE,
             crate::media::mime_for_filename(&filename),
         )
+        .header(header::CONTENT_DISPOSITION, disposition)
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+        .body(Body::from(bytes))
+        .map_err(|err| Error::string(&err.to_string()))
+}
+
+async fn media_download(
+    State(ctx): State<AppContext>,
+    AxumPath(filename): AxumPath<String>,
+) -> Result<Response> {
+    if !crate::media::safe_filename(&filename) {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .map_err(|err| Error::string(&err.to_string()));
+    }
+    let path = crate::media::upload_dir().join(&filename);
+    let bytes = match tokio::fs::read(&path).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::empty())
+                .map_err(|err| Error::string(&err.to_string()));
+        }
+    };
+    let recorded = medias::Model::find_by_filename(&ctx.db, &filename)
+        .await
+        .ok()
+        .flatten();
+    let original = recorded
+        .as_ref()
+        .map_or(filename.as_str(), |item| item.original_name.as_str());
+    let mime = recorded.as_ref().map_or_else(
+        || crate::media::mime_for_filename(&filename),
+        |item| item.mime.as_str(),
+    );
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime)
+        .header(
+            header::CONTENT_DISPOSITION,
+            crate::media::content_disposition(original),
+        )
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
         .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
         .body(Body::from(bytes))
         .map_err(|err| Error::string(&err.to_string()))
@@ -599,7 +731,45 @@ pub fn routes() -> Routes {
         .add("/archive", get(archive))
         .add("/search", get(search_page))
         .add("/media/{filename}", get(media_file))
+        .add("/media/{filename}/download", get(media_download))
         .add("/health", get(health))
         .add("/robots.txt", get(robots))
         .add("/sitemap.xml", get(sitemap))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_attachment_markers_and_ignores_unsafe_names() {
+        assert_eq!(
+            parse_attachment_marker("[[file:abc.pdf|团队 报告]]"),
+            Some(("abc.pdf", Some("团队 报告")))
+        );
+        assert_eq!(
+            parse_attachment_marker("  [[file:abc.pdf]]  "),
+            Some(("abc.pdf", None))
+        );
+        assert_eq!(parse_attachment_marker("[[file:../secret.pdf]]"), None);
+        assert_eq!(parse_attachment_marker("[[file:]]"), None);
+        assert_eq!(parse_attachment_marker("[[file:abc.pdf|x]] trailing"), None);
+    }
+
+    #[test]
+    fn attachment_cards_escape_labels_and_link_downloads() {
+        let html = render_attachment("abc.pdf", Some("<b>报告</b>"), None);
+        assert!(html.contains("class=\"attachment-card\""));
+        assert!(html.contains("href=\"/media/abc.pdf/download\""));
+        assert!(html.contains("&lt;b&gt;报告&lt;/b&gt;"));
+        assert!(!html.contains("<b>报告</b>"));
+        assert!(html.contains("PDF"));
+        assert!(html.contains("下载"));
+    }
+
+    #[test]
+    fn attachment_filenames_skip_fenced_code() {
+        let body = "[[file:a.pdf|A]]\n\n```\n[[file:b.pdf|B]]\n```\n\n[[file:a.pdf|A2]]";
+        assert_eq!(attachment_filenames(body), vec!["a.pdf".to_string()]);
+    }
 }
